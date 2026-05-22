@@ -692,11 +692,15 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                     | .error e => .error e
                     | .ok s₃ =>
                       let s₄ := s₃✏️⟦s⟧?
-                      match exec fuel' (.For cond post body) codeOverride s₄ with
-                      | .error e => .error e
-                      | .ok s₅ =>
-                        let s₆ := s₅✏️⟦s⟧?
-                        .ok s₆
+                      match s₃ with
+                      | .OutOfFuel => .ok s₄
+                      | .Checkpoint (.Leave _ _) => .ok s₄
+                      | _ =>
+                        match exec fuel' (.For cond post body) codeOverride s₄ with
+                        | .error e => .error e
+                        | .ok s₅ =>
+                          let s₆ := s₅✏️⟦s⟧?
+                          .ok s₆
 end
 
 def execTopLevel (fuel : Nat) (stmt : Stmt) (s : State) : State :=
