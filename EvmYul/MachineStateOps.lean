@@ -78,6 +78,9 @@ def gas (self : MachineState) : UInt256 :=
 
 section ReturnData
 
+def freshExternalCall (gas : UInt256) : MachineState :=
+  { (default : MachineState) with gasAvailable := gas }
+
 def setReturnData (self : MachineState) (r : ByteArray) : MachineState :=
   { self with returnData := r }
 

@@ -32,7 +32,7 @@ EMPTY(σ, a). Section 4.1., equation 14.
 def emptyAccount {τ} (self : Account τ) : Bool :=
   match τ with
     | .EVM => self.code.isEmpty ∧ self.nonce = ⟨0⟩ ∧ self.balance = ⟨0⟩
-    | .Yul => false -- Yul statements always hold code.
+    | .Yul => self.code == default ∧ self.nonce = ⟨0⟩ ∧ self.balance = ⟨0⟩
 
 def addBalance {τ} (self : Account τ) (balance : UInt256) : Option (Account τ) :=
   let overflow : Bool := self.balance + balance < self.balance

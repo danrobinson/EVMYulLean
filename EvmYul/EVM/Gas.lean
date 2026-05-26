@@ -161,22 +161,26 @@ def Ctload : ℕ :=
 -/
 def L (n : ℕ) : ℕ := n - (n / 64)
 
-def Cnew (t : AccountAddress) (val : UInt256) (σ : AccountMap .EVM) : ℕ :=
+def Cnew {τ : OperationType} (t : AccountAddress) (val : UInt256)
+    (σ : AccountMap τ) : ℕ :=
   if EvmYul.State.dead σ t && val != ⟨0⟩ then Gnewaccount else 0
 
 def Cxfer (val : UInt256) : ℕ :=
   if val != ⟨0⟩ then Gcallvalue else 0
 
-def Cextra (t r : AccountAddress) (val : UInt256) (σ : AccountMap .EVM) (A : Substate) : ℕ :=
+def Cextra {τ : OperationType} (t r : AccountAddress) (val : UInt256)
+    (σ : AccountMap τ) (A : Substate) : ℕ :=
   Caccess t A + Cxfer val + Cnew r val σ
 
-def Cgascap (t r : AccountAddress) (val g : UInt256) (σ : AccountMap .EVM) (μ : MachineState) (A : Substate) :=
+def Cgascap {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+    (σ : AccountMap τ) (μ : MachineState) (A : Substate) :=
   if μ.gasAvailable.toNat >= Cextra t r val σ A then
     min (L <| (μ.gasAvailable.toNat - Cextra t r val σ A)) g.toNat
   else
     g.toNat
 
-def Ccallgas (t r : AccountAddress) (val g : UInt256) (σ : AccountMap .EVM) (μ : MachineState) (A : Substate) : ℕ :=
+def Ccallgas {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+    (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
   match val with
     | ⟨0⟩ => Cgascap t r val g σ μ A
     | _ => Cgascap t r val g σ μ A + GasConstants.Gcallstipend
@@ -184,7 +188,8 @@ def Ccallgas (t r : AccountAddress) (val g : UInt256) (σ : AccountMap .EVM) (μ
 /--
 NB Assumes stack coherence.
 -/
-def Ccall (t r : AccountAddress) (val g : UInt256) (σ : AccountMap .EVM) (μ : MachineState) (A : Substate) : ℕ :=
+def Ccall {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+    (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
   Cgascap t r val g σ μ A + Cextra t r val σ A
 
 /--

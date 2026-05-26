@@ -7,6 +7,7 @@ import EvmYul.Yul.StateOps
 import EvmYul.Yul.SizeLemmas
 import EvmYul.Yul.Exception
 
+import EvmYul.EVM.Gas
 import EvmYul.Semantics
 
 set_option maxHeartbeats 400000 -- Needs more than 200000
@@ -242,6 +243,10 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
+            let callGas : UInt256 :=
+              .ofNat <|
+                EvmYul.EVM.Ccallgas address address value gas
+                  s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
             let accountMap₁Opt :=
               callTransferAccountMap?
                 s₀.sharedState.accountMap
@@ -266,13 +271,14 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                       | .Precompiled precompiled =>
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
+                                                    code := default,
                                                     codeOwner := address,
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
                                                     depth := s₀.executionEnv.depth + 1
                               }
                           buildPrecompiledContractCallState
-                            s₀Accessed accountMap₁ precompiled gas
+                            s₀Accessed accountMap₁ precompiled callGas
                             executionEnv₁ inOffset inSize outOffset outSize
                       | .Code _ =>
                         match s₀.sharedState.accountMap.find? address with
@@ -290,7 +296,8 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                 }
                           let sharedState₁ := { sharedState with
                                                   executionEnv := executionEnv₁,
-                                                  memory := ByteArray.mk #[],
+                                                  toMachineState :=
+                                                    EvmYul.MachineState.freshExternalCall callGas,
                                                   accountMap := accountMap₁
                                               }
                           let s₁ : State := .Ok sharedState₁ default
@@ -315,6 +322,10 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let s₀Accessed := addAccessedAccount s₀ address
             let s₀Static : State := setStatic s₀Accessed false
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
+            let callGas : UInt256 :=
+              .ofNat <|
+                EvmYul.EVM.Ccallgas address address ⟨0⟩ gas
+                  s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
           
               if s₀.executionEnv.depth ≥ 1024
               then
@@ -329,13 +340,14 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                     | .Precompiled precompiled =>
                         let executionEnv₁ := { s₀Static.executionEnv with
                                                   calldata := calldata₁,
+                                                  code := default,
                                                   codeOwner := address,
                                                   source := s₀Static.executionEnv.codeOwner,
                                                   weiValue := ⟨0⟩
                                                   depth := s₀Static.toSharedState.executionEnv.depth + 1
                                               }
                         buildPrecompiledContractCallState
-                          s₀Accessed s₀.sharedState.accountMap precompiled gas
+                          s₀Accessed s₀.sharedState.accountMap precompiled callGas
                           executionEnv₁ inOffset inSize outOffset outSize
                     | .Code _ =>
                       match s₀.sharedState.accountMap.find? address with
@@ -353,7 +365,8 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                               }
                         let sharedState₁ := { sharedState with
                                                 executionEnv := executionEnv₁,
-                                                memory := ByteArray.mk #[],
+                                                toMachineState :=
+                                                  EvmYul.MachineState.freshExternalCall callGas,
                                             }
                         let s₁ : State := .Ok sharedState₁ default
                         
@@ -376,6 +389,10 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
+            let callGas : UInt256 :=
+              .ofNat <|
+                EvmYul.EVM.Ccallgas address s₀.executionEnv.codeOwner value gas
+                  s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
             let accountMap₁Opt :=
               callTransferAccountMap?
                 s₀.sharedState.accountMap
@@ -400,13 +417,14 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                       | .Precompiled precompiled =>
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
+                                                    code := default,
                                                     codeOwner := s₀.executionEnv.codeOwner,
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
                                                     depth := s₀.executionEnv.depth + 1
                                                 }
                           buildPrecompiledContractCallState
-                            s₀Accessed accountMap₁ precompiled gas
+                            s₀Accessed accountMap₁ precompiled callGas
                             executionEnv₁ inOffset inSize outOffset outSize
                       | .Code _ =>
                         match s₀.sharedState.accountMap.find? address with
@@ -424,7 +442,8 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                                 }
                           let sharedState₁ := { sharedState with
                                                   executionEnv := executionEnv₁,
-                                                  memory := ByteArray.mk #[],
+                                                  toMachineState :=
+                                                    EvmYul.MachineState.freshExternalCall callGas,
                                                   accountMap := accountMap₁
                                               }
                           let s₁ : State := .Ok sharedState₁ default
@@ -449,6 +468,10 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
+            let callGas : UInt256 :=
+              .ofNat <|
+                EvmYul.EVM.Ccallgas address s₀.executionEnv.codeOwner ⟨0⟩ gas
+                  s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
             if s₀.executionEnv.depth ≥ 1024
             then
               buildContractCallEmptyReturnState s₀Accessed .none
@@ -462,11 +485,12 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                   | .Precompiled precompiled =>
                       let executionEnv₁ := { sharedState.executionEnv with
                                                 calldata := calldata₁,
+                                                code := default,
                                                 codeOwner := s₀.executionEnv.codeOwner
                                                 depth := s₀.executionEnv.depth + 1
                                             }
                       buildPrecompiledContractCallState
-                        s₀Accessed s₀.sharedState.accountMap precompiled gas
+                        s₀Accessed s₀.sharedState.accountMap precompiled callGas
                         executionEnv₁ inOffset inSize outOffset outSize
                   | .Code _ =>
                     match s₀.sharedState.accountMap.find? address with
@@ -482,7 +506,8 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                             }
                       let sharedState₁ := { sharedState with
                                               executionEnv := executionEnv₁,
-                                              memory := ByteArray.mk #[]
+                                              toMachineState :=
+                                                EvmYul.MachineState.freshExternalCall callGas
                                           }
                       let s₁ : State := .Ok sharedState₁ default
                       
