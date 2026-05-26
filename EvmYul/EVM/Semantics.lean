@@ -808,10 +808,10 @@ def Θ (fuel : Nat)
             pure (a, true, b, c, d, o)
 
   -- Equation (127)
-  let σ' := if σ'' == ∅ then σ else σ''
+  let σ' := if σ''.isEmpty then σ else σ''
 
   -- Equation (129)
-  let A' := if σ'' == ∅ then A else A''
+  let A' := if σ''.isEmpty then A else A''
 
   -- Equation (119)
   .ok (createdAccounts, σ', g', A', z, out)

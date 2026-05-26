@@ -207,7 +207,7 @@ def buildPrecompiledContractCallState (s₀ : State) (accountMap₁ : AccountMap
     runPrecompiledContract precompiled accountMap₁ gas s₀.toState.substate executionEnv
   if z then
     let accountMap₃ :=
-      if accountMap₂ == ∅ then s₀.toSharedState.accountMap else accountMap₂
+      if accountMap₂.isEmpty then s₀.toSharedState.accountMap else accountMap₂
     buildContractCallReturnState s₀ accountMap₃ substate₂ returnData
       inOffset inSize outOffset outSize ⟨1⟩
   else
