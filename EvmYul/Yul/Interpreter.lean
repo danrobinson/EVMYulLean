@@ -168,25 +168,8 @@ def buildContractCallReturnState (s₀ : State) (accountMap₂ : AccountMap .Yul
       }
     .ok (.Ok sharedState₃ varstore, [v])
 
-def runPrecompiledContract {τ : OperationType} (precompiled : AccountAddress)
-    (σ : AccountMap τ) (g : UInt256) (A : Substate)
-    (I : ExecutionEnv τ) :
-    Bool × AccountMap τ × UInt256 × Substate × ByteArray :=
-  match precompiled with
-  | 1  => Ξ_ECREC σ g A I
-  | 2  => Ξ_SHA256 σ g A I
-  | 3  => Ξ_RIP160 σ g A I
-  | 4  => Ξ_ID σ g A I
-  | 5  => Ξ_EXPMOD σ g A I
-  | 6  => Ξ_BN_ADD σ g A I
-  | 7  => Ξ_BN_MUL σ g A I
-  | 8  => Ξ_SNARKV σ g A I
-  | 9  => Ξ_BLAKE2_F σ g A I
-  | 10 => Ξ_PointEval σ g A I
-  | _ => default
-
 def buildPrecompiledContractCallState (s₀ : State) (accountMap₁ : AccountMap .Yul)
-    (precompiled : AccountAddress) (gas : Literal)
+    (precompiled : PrecompiledContract) (gas : Literal)
     (executionEnv : ExecutionEnv .Yul) (outOffset outSize : Literal) :
     Except Yul.Exception (State × List Literal) :=
   let (z, accountMap₂, _, substate₂, returnData) :=

@@ -139,6 +139,52 @@ def expModAux (m : ℕ) (a : ℕ) (c : ℕ) : ℕ → ℕ
 
 def expMod (m : ℕ) (b : UInt256) (n : ℕ) : ℕ := expModAux m 1 b.toNat n
 
+def Ξ_EXPMOD_gasCost (data : ByteArray) : ℕ :=
+  let base_length := nat_of_slice data 0 32
+  let exp_length := nat_of_slice data 32 32
+  let modulus_length := nat_of_slice data 64 32
+  -- Pseudo laziness
+  -- We don't want to call `nat_of_slice` unless we need it
+  let exp := λ () ↦ nat_of_slice data (96 + base_length) exp_length
+
+  let multiplication_complexity x y := ((max x y + 7) / 8) ^ 2
+  let adjusted_exp_length :=
+    if exp_length ≤ 32 && exp () == 0 then
+      0
+    else
+      if exp_length ≤ 32 then
+        Nat.log 2 (exp ())
+      else
+        let length_part := 8 * (exp_length - 32)
+        let bits_part :=
+          let exp_head := nat_of_slice data (96 + base_length) 32
+          if 32 < exp_length ∧ exp_head != 0 then
+            Nat.log 2 exp_head
+          else
+            0
+        length_part + bits_part
+  let iterations := max adjusted_exp_length 1
+  let G_quaddivisor := 3
+  max 200 (multiplication_complexity base_length modulus_length * iterations / G_quaddivisor)
+
+def Ξ_EXPMOD_output (data : ByteArray) : ByteArray :=
+  let base_length := nat_of_slice data 0 32
+  let exp_length := nat_of_slice data 32 32
+  let modulus_length := nat_of_slice data 64 32
+  let modulus := nat_of_slice data (96 + base_length + exp_length) modulus_length
+  if modulus_length == 0 || modulus == 0 then
+    ffi.ByteArray.zeroes ⟨modulus_length⟩
+  else
+    let base := nat_of_slice data 96 base_length
+    let exp := nat_of_slice data (96 + base_length) exp_length
+    let expmod_base := BE (expMod modulus (.ofNat base) exp)
+    let expmod_zeroes :=
+      if modulus_length ≥ expmod_base.size then
+        ffi.ByteArray.zeroes ⟨modulus_length - expmod_base.size⟩
+      else
+        ByteArray.empty
+    expmod_zeroes ++ expmod_base
+
 def Ξ_EXPMOD {τ : OperationType}
   (σ : AccountMap τ)
   (g : UInt256)
@@ -148,53 +194,11 @@ def Ξ_EXPMOD {τ : OperationType}
   (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let data := I.calldata
-  let base_length := nat_of_slice data 0 32
-  let exp_length := nat_of_slice data 32 32
-  let modulus_length := nat_of_slice data 64 32
-  -- Pseudo laziness
-  -- We don't want to call `nat_of_slice` unless we need it
-  let exp := λ () ↦ nat_of_slice data (96 + base_length) exp_length
-
-  let gᵣ :=
-    let multiplication_complexity x y := ((max x y + 7) / 8) ^ 2
-    let adjusted_exp_length :=
-      if exp_length ≤ 32 && exp () == 0 then
-        0
-      else
-        if exp_length ≤ 32 then
-          Nat.log 2 (exp ())
-        else
-          let length_part := 8 * (exp_length - 32)
-          let bits_part :=
-            let exp_head := nat_of_slice data (96 + base_length) 32
-            if 32 < exp_length ∧ exp_head != 0 then
-              Nat.log 2 exp_head
-            else
-              0
-          length_part + bits_part
-    let iterations := max adjusted_exp_length 1
-    let G_quaddivisor := 3
-
-    max 200 (multiplication_complexity base_length modulus_length * iterations / G_quaddivisor)
-
+  let gᵣ := Ξ_EXPMOD_gasCost data
   if g.toNat < gᵣ then
     (false, ∅, ⟨0⟩, A, .empty)
   else
-    let modulus := nat_of_slice data (96 + base_length + exp_length) modulus_length
-    let o : ByteArray :=
-      if modulus_length == 0 || modulus == 0 then
-        ffi.ByteArray.zeroes ⟨modulus_length⟩
-      else
-        let base := nat_of_slice data 96 base_length
-        let exp := nat_of_slice data (96 + base_length) exp_length
-        let expmod_base := BE (expMod modulus (.ofNat base) exp)
-        let expmod_zeroes :=
-          if modulus_length ≥ expmod_base.size then
-            ffi.ByteArray.zeroes ⟨modulus_length - expmod_base.size⟩
-          else
-            ByteArray.empty
-        expmod_zeroes ++ expmod_base
-    (true, σ, g - .ofNat gᵣ, A, o)
+    (true, σ, g - .ofNat gᵣ, A, Ξ_EXPMOD_output data)
 
 private def expmodOutput :=
   let (_, _, _, _, o) :=
@@ -385,3 +389,19 @@ def Ξ_PointEval {τ : OperationType}
       | .error e =>
         dbg_trace s!"Ξ_PointEval failed: {e}"
         (false, ∅, ⟨0⟩, A, .empty)
+
+def runPrecompiledContract {τ : OperationType} (precompiled : PrecompiledContract)
+    (σ : AccountMap τ) (g : UInt256) (A : Substate)
+    (I : ExecutionEnv τ) :
+    Bool × AccountMap τ × UInt256 × Substate × ByteArray :=
+  match precompiled with
+  | .ecrec => Ξ_ECREC σ g A I
+  | .sha256 => Ξ_SHA256 σ g A I
+  | .rip160 => Ξ_RIP160 σ g A I
+  | .identity => Ξ_ID σ g A I
+  | .expmod => Ξ_EXPMOD σ g A I
+  | .bnAdd => Ξ_BN_ADD σ g A I
+  | .bnMul => Ξ_BN_MUL σ g A I
+  | .snarkv => Ξ_SNARKV σ g A I
+  | .blake2F => Ξ_BLAKE2_F σ g A I
+  | .pointEval => Ξ_PointEval σ g A I

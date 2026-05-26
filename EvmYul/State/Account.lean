@@ -8,16 +8,72 @@ import EvmYul.Yul.Ast
 
 namespace EvmYul
 
+inductive PrecompiledContract where
+  | ecrec
+  | sha256
+  | rip160
+  | identity
+  | expmod
+  | bnAdd
+  | bnMul
+  | snarkv
+  | blake2F
+  | pointEval
+  deriving DecidableEq, Inhabited, Repr
+
+namespace PrecompiledContract
+
+def address : PrecompiledContract → AccountAddress
+  | .ecrec => 1
+  | .sha256 => 2
+  | .rip160 => 3
+  | .identity => 4
+  | .expmod => 5
+  | .bnAdd => 6
+  | .bnMul => 7
+  | .snarkv => 8
+  | .blake2F => 9
+  | .pointEval => 10
+
+def all : List PrecompiledContract :=
+  [ .ecrec
+  , .sha256
+  , .rip160
+  , .identity
+  , .expmod
+  , .bnAdd
+  , .bnMul
+  , .snarkv
+  , .blake2F
+  , .pointEval
+  ]
+
+def ofAddress? (addr : AccountAddress) : Option PrecompiledContract :=
+  match addr.val with
+  | 1 => some .ecrec
+  | 2 => some .sha256
+  | 3 => some .rip160
+  | 4 => some .identity
+  | 5 => some .expmod
+  | 6 => some .bnAdd
+  | 7 => some .bnMul
+  | 8 => some .snarkv
+  | 9 => some .blake2F
+  | 10 => some .pointEval
+  | _ => none
+
+end PrecompiledContract
+
 /--
   Precompiled contract addresses.
   (142) `π ≡ {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}`
 -/
 def π : Batteries.RBSet AccountAddress compare :=
-  Batteries.RBSet.ofList ((List.range 11).tail.map (Fin.ofNat _)) compare
+  Batteries.RBSet.ofList (PrecompiledContract.all.map PrecompiledContract.address) compare
 
 inductive ToExecute (τ : OperationType) where
   | Code (code : Yul.Ast.contractCode τ)
-  | Precompiled (precompiled : AccountAddress)
+  | Precompiled (precompiled : PrecompiledContract)
 
 structure PersistentAccountState (τ : OperationType) where
   nonce    : UInt256

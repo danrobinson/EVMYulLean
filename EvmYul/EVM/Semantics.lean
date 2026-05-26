@@ -779,22 +779,10 @@ def Θ (fuel : Nat)
     }
 
   -- Equation (131)
-  -- Note that the `c` used here is the actual code, not the address. TODO - Handle precompiled contracts.
   let (createdAccounts, z, σ'', g', A'', out) ←
     match c with
       | ToExecute.Precompiled p =>
-        match p with
-          | 1  => .ok <| (∅, Ξ_ECREC σ₁ g A I)
-          | 2  => .ok <| (∅, Ξ_SHA256 σ₁ g A I)
-          | 3  => .ok <| (∅, Ξ_RIP160 σ₁ g A I)
-          | 4  => .ok <| (∅, Ξ_ID σ₁ g A I)
-          | 5  => .ok <| (∅, Ξ_EXPMOD σ₁ g A I)
-          | 6  => .ok <| (∅, Ξ_BN_ADD σ₁ g A I)
-          | 7  => .ok <| (∅, Ξ_BN_MUL σ₁ g A I)
-          | 8  => .ok <| (∅, Ξ_SNARKV σ₁ g A I)
-          | 9  => .ok <| (∅, Ξ_BLAKE2_F σ₁ g A I)
-          | 10 => .ok <| (∅, Ξ_PointEval σ₁ g A I)
-          | _ => default
+        .ok <| (∅, runPrecompiledContract p σ₁ g A I)
       | ToExecute.Code _ =>
         match Ξ fuel createdAccounts genesisBlockHeader blocks σ₁ σ₀ g A I with
           | .error e =>

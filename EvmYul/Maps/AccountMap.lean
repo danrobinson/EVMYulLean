@@ -65,17 +65,17 @@ def AccountMap.transferBalance (τ : OperationType) (σ : AccountMap τ) (from_a
     | .some σ' => σ'.increaseBalance τ to_addr amount
 
 def toExecute (τ : OperationType) (σ : AccountMap τ) (t : AccountAddress) : ToExecute τ :=
-  if /- t is a precompiled account -/ t ∈ π then
-    ToExecute.Precompiled t
-  else Id.run do
-    match τ with
-      | .EVM =>
-        -- We use the code directly without an indirection a'la `codeMap[t]`.
-        let .some tDirect := σ.find? t | ToExecute.Code default
-        ToExecute.Code tDirect.code
-      | .Yul =>
-        let .some tDirect := σ.find? t | ToExecute.Code default
-        ToExecute.Code tDirect.code
+  match PrecompiledContract.ofAddress? t with
+  | some precompiled => ToExecute.Precompiled precompiled
+  | none => Id.run do
+      match τ with
+        | .EVM =>
+          -- We use the code directly without an indirection a'la `codeMap[t]`.
+          let .some tDirect := σ.find? t | ToExecute.Code default
+          ToExecute.Code tDirect.code
+        | .Yul =>
+          let .some tDirect := σ.find? t | ToExecute.Code default
+          ToExecute.Code tDirect.code
 
 def L_S (σ : PersistentAccountMap .EVM) : Array (ByteArray × ByteArray) :=
   σ.foldl
