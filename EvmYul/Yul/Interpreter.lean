@@ -147,6 +147,57 @@ def buildContractCallEmptyReturnState (s₀ : State) (accountMap₁ : Option (Ac
                                              accountMap := accountMap₁.getD s₀.toSharedState.accountMap }
       .ok (.Ok sharedState₁ varstore, [v])
 
+def buildContractCallReturnState (s₀ : State) (accountMap₂ : AccountMap .Yul)
+    (substate₂ : Substate) (returnData : ByteArray)
+    (outOffset outSize v : Literal) :
+    Except Yul.Exception (State × List Literal) :=
+  match s₀ with
+  | .OutOfFuel => .error .OutOfFuel
+  | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
+  | .Ok sharedState₀ varstore =>
+    let memory₃ :=
+      returnData.copySlice 0 s₀.toMachineState.memory outOffset.toNat
+        (min outSize.toNat returnData.size)
+    let sharedState₃ :=
+      { sharedState₀ with
+        memory := memory₃
+        returnData := returnData
+        H_return := ByteArray.empty
+        accountMap := accountMap₂
+        substate := substate₂
+      }
+    .ok (.Ok sharedState₃ varstore, [v])
+
+def runPrecompiledContract {τ : OperationType} (precompiled : AccountAddress)
+    (σ : AccountMap τ) (g : UInt256) (A : Substate)
+    (I : ExecutionEnv τ) :
+    Bool × AccountMap τ × UInt256 × Substate × ByteArray :=
+  match precompiled with
+  | 1  => Ξ_ECREC σ g A I
+  | 2  => Ξ_SHA256 σ g A I
+  | 3  => Ξ_RIP160 σ g A I
+  | 4  => Ξ_ID σ g A I
+  | 5  => Ξ_EXPMOD σ g A I
+  | 6  => Ξ_BN_ADD σ g A I
+  | 7  => Ξ_BN_MUL σ g A I
+  | 8  => Ξ_SNARKV σ g A I
+  | 9  => Ξ_BLAKE2_F σ g A I
+  | 10 => Ξ_PointEval σ g A I
+  | _ => default
+
+def buildPrecompiledContractCallState (s₀ : State) (accountMap₁ : AccountMap .Yul)
+    (precompiled : AccountAddress) (gas : Literal)
+    (executionEnv : ExecutionEnv .Yul) (outOffset outSize : Literal) :
+    Except Yul.Exception (State × List Literal) :=
+  let (z, accountMap₂, _, substate₂, returnData) :=
+    runPrecompiledContract precompiled accountMap₁ gas s₀.toState.substate executionEnv
+  if z then
+    let accountMap₃ :=
+      if accountMap₂ == ∅ then s₀.toSharedState.accountMap else accountMap₂
+    buildContractCallReturnState s₀ accountMap₃ substate₂ returnData outOffset outSize ⟨1⟩
+  else
+    buildContractCallEmptyReturnState s₀ .none ⟨0⟩
+
 /--
   `selectSwitchCase` returns the first switch case body whose literal matches
   the evaluated switch condition, or the default body if no case matches.
@@ -171,7 +222,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
       match prim with
       | .CALL =>
         match args with
-          | _ :: address_arg :: value :: inOffset :: inSize :: outOffset :: outSize :: _ =>
+          | gas :: address_arg :: value :: inOffset :: inSize :: outOffset :: outSize :: _ =>
             if ¬s₀.executionEnv.perm ∧ value ≠ ⟨0⟩ then throw .StaticModeViolation
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
@@ -194,7 +245,20 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                   | .OutOfFuel => .error .OutOfFuel
                   | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
                   | .Ok sharedState varstore =>
-                      match s₀.sharedState.accountMap.find? address with
+                      match EvmYul.toExecute .Yul s₀.sharedState.accountMap address with
+                      | .Precompiled precompiled =>
+                          let executionEnv₁ := { sharedState.executionEnv with
+                                                    calldata := calldata₁,
+                                                    codeOwner := address,
+                                                    source := s₀.executionEnv.codeOwner,
+                                                    weiValue := value
+                                                    depth := s₀.executionEnv.depth + 1
+                              }
+                          buildPrecompiledContractCallState
+                            s₀Accessed accountMap₁ precompiled gas
+                            executionEnv₁ outOffset outSize
+                      | .Code _ =>
+                        match s₀.sharedState.accountMap.find? address with
                         | .none => 
                           buildContractCallEmptyReturnState s₀Accessed accountMap₁ ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                         | .some yulContract =>
@@ -276,7 +340,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | .STATICCALL =>
         match args with
-          | _ :: address_arg :: inOffset :: inSize :: outOffset :: outSize :: _ =>
+          | gas :: address_arg :: inOffset :: inSize :: outOffset :: outSize :: _ =>
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
             let s₀Static : State := setStatic s₀Accessed false
@@ -290,7 +354,20 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                 | .OutOfFuel => .error .OutOfFuel
                 | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
                 | .Ok sharedState varstore =>
-                    match s₀.sharedState.accountMap.find? address with
+                    match EvmYul.toExecute .Yul s₀.sharedState.accountMap address with
+                    | .Precompiled precompiled =>
+                        let executionEnv₁ := { s₀Static.executionEnv with
+                                                  calldata := calldata₁,
+                                                  codeOwner := address,
+                                                  source := s₀Static.executionEnv.codeOwner,
+                                                  weiValue := ⟨0⟩
+                                                  depth := s₀Static.toSharedState.executionEnv.depth + 1
+                                              }
+                        buildPrecompiledContractCallState
+                          s₀Accessed s₀.sharedState.accountMap precompiled gas
+                          executionEnv₁ outOffset outSize
+                    | .Code _ =>
+                      match s₀.sharedState.accountMap.find? address with
                       | .none => 
                           buildContractCallEmptyReturnState s₀Accessed .none ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                       | .some yulContract =>
@@ -358,7 +435,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | .CALLCODE =>
         match args with
-          | _ :: address_arg :: value :: inOffset :: inSize :: outOffset :: outSize :: _ =>
+          | gas :: address_arg :: value :: inOffset :: inSize :: outOffset :: outSize :: _ =>
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
@@ -380,7 +457,20 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                   | .OutOfFuel => .error .OutOfFuel
                   | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
                   | .Ok sharedState varstore =>
-                      match s₀.sharedState.accountMap.find? address with
+                      match EvmYul.toExecute .Yul s₀.sharedState.accountMap address with
+                      | .Precompiled precompiled =>
+                          let executionEnv₁ := { sharedState.executionEnv with
+                                                    calldata := calldata₁,
+                                                    codeOwner := s₀.executionEnv.codeOwner,
+                                                    source := s₀.executionEnv.codeOwner,
+                                                    weiValue := value
+                                                    depth := s₀.executionEnv.depth + 1
+                                                }
+                          buildPrecompiledContractCallState
+                            s₀Accessed accountMap₁ precompiled gas
+                            executionEnv₁ outOffset outSize
+                      | .Code _ =>
+                        match s₀.sharedState.accountMap.find? address with
                         | .none => 
                             buildContractCallEmptyReturnState s₀Accessed accountMap₁ ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                         | .some yulContract =>
@@ -449,7 +539,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | .DELEGATECALL =>
         match args with
-          | _ :: address_arg :: inOffset :: inSize :: outOffset :: outSize :: _ =>
+          | gas :: address_arg :: inOffset :: inSize :: outOffset :: outSize :: _ =>
             let address := AccountAddress.ofUInt256 address_arg
             let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
@@ -461,7 +551,18 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
               | .OutOfFuel => .error .OutOfFuel
               | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
               | .Ok sharedState varstore =>
-                  match s₀.sharedState.accountMap.find? address with
+                  match EvmYul.toExecute .Yul s₀.sharedState.accountMap address with
+                  | .Precompiled precompiled =>
+                      let executionEnv₁ := { sharedState.executionEnv with
+                                                calldata := calldata₁,
+                                                codeOwner := s₀.executionEnv.codeOwner
+                                                depth := s₀.executionEnv.depth + 1
+                                            }
+                      buildPrecompiledContractCallState
+                        s₀Accessed s₀.sharedState.accountMap precompiled gas
+                        executionEnv₁ outOffset outSize
+                  | .Code _ =>
+                    match s₀.sharedState.accountMap.find? address with
                     | .none => 
                       buildContractCallEmptyReturnState s₀Accessed .none ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                     | .some yulContract =>

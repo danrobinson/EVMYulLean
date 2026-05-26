@@ -20,13 +20,13 @@ import EvmYul.FFI.ffi
 
 open EvmYul
 
-def Ξ_ECREC
-  (σ : (AccountMap .EVM))
+def Ξ_ECREC {τ : OperationType}
+  (σ : (AccountMap τ))
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let gᵣ : ℕ := 3000
 
@@ -53,13 +53,13 @@ def Ξ_ECREC
             .empty
     (true, σ, g - .ofNat gᵣ, A, o)
 
-def Ξ_SHA256
-  (σ : AccountMap .EVM)
+def Ξ_SHA256 {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let gᵣ : ℕ :=
     let l := I.calldata.size
@@ -77,13 +77,13 @@ def Ξ_SHA256
           .empty
     (true, σ, g - .ofNat gᵣ, A, o)
 
-def Ξ_RIP160
-  (σ : AccountMap .EVM)
+def Ξ_RIP160 {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let gᵣ : ℕ :=
     let l := I.calldata.size
@@ -101,13 +101,13 @@ def Ξ_RIP160
           .empty
     (true, σ, g - .ofNat gᵣ, A, o)
 
-def Ξ_ID
-  (σ : AccountMap .EVM)
+def Ξ_ID {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let gᵣ : ℕ :=
     let l := I.calldata.size
@@ -139,13 +139,13 @@ def expModAux (m : ℕ) (a : ℕ) (c : ℕ) : ℕ → ℕ
 
 def expMod (m : ℕ) (b : UInt256) (n : ℕ) : ℕ := expModAux m 1 b.toNat n
 
-def Ξ_EXPMOD
-  (σ : AccountMap .EVM)
+def Ξ_EXPMOD {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let data := I.calldata
   let base_length := nat_of_slice data 0 32
@@ -214,13 +214,13 @@ private def expmodOutput :=
   E : ByteArray := ⟨#[2]⟩
   M : ByteArray := ⟨#[100]⟩
 
-def Ξ_BN_ADD
-  (σ : AccountMap .EVM)
+def Ξ_BN_ADD {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let gᵣ : ℕ := 150
 
@@ -268,13 +268,13 @@ private def bn_addOutput₁ :=
   x : ByteArray := UInt256.toByteArray ⟨1⟩
   y : ByteArray := UInt256.toByteArray ⟨2⟩
 
-def Ξ_BN_MUL
-  (σ : AccountMap .EVM)
+def Ξ_BN_MUL {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let gᵣ : ℕ := 6000
 
@@ -307,13 +307,13 @@ private def bn_mulOutput :=
   y₁ : ByteArray := UInt256.toByteArray ⟨2⟩
   n  : ByteArray := UInt256.toByteArray ⟨2⟩
 
-def Ξ_SNARKV
-  (σ : AccountMap .EVM)
+def Ξ_SNARKV {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let d := I.calldata
   let k := d.size / 192
@@ -343,13 +343,13 @@ private def snarkvOutput :=
   x : ByteArray := UInt256.toByteArray ⟨1⟩
   y : ByteArray := UInt256.toByteArray ⟨2⟩
 
-def Ξ_BLAKE2_F
-  (σ : AccountMap .EVM)
+def Ξ_BLAKE2_F {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let d := I.calldata
   let gᵣ : ℕ := fromByteArrayBigEndian (d.extract 0 4)
@@ -365,13 +365,13 @@ def Ξ_BLAKE2_F
         dbg_trace s!"Ξ_BLAKE2_F failed: {e}"
         (false, ∅, ⟨0⟩, A, .empty)
 
-def Ξ_PointEval
-  (σ : AccountMap .EVM)
+def Ξ_PointEval {τ : OperationType}
+  (σ : AccountMap τ)
   (g : UInt256)
   (A : Substate)
-  (I : ExecutionEnv .EVM)
+  (I : ExecutionEnv τ)
     :
-  (Bool × AccountMap .EVM × UInt256 × Substate × ByteArray)
+  (Bool × AccountMap τ × UInt256 × Substate × ByteArray)
 :=
   let d := I.calldata
   let gᵣ : ℕ := 50000
