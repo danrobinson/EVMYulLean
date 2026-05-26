@@ -189,11 +189,9 @@ def call (fuel : Nat)
           -- otherwise (σ, CCALLGAS(σ, μ, A), A, 0, ())
           .ok
             (evmState.createdAccounts, evmState.toState.accountMap, .ofNat callgas, A', false, .empty)
-      -- n ≡ min({μs[6], ‖o‖})
-      let n : UInt256 := min outSize (.ofNat o.size)
-
-      let μ'ₘ := writeBytes o 0 evmState.toMachineState outOffset.toNat n.toNat -- μ′_m[μs[5]  ... (μs[5] + n − 1)] = o[0 ... (n − 1)]
-      let μ'ₒ := o -- μ′o = o
+      let μ'ₘ :=
+        evmState.toMachineState.finishExternalCall o
+          inOffset inSize outOffset outSize
       let μ'_g := μ'ₘ.gasAvailable + g' -- Ccall is subtracted in X as part of C
 
       let codeExecutionFailed   : Bool := !z
@@ -204,11 +202,7 @@ def call (fuel : Nat)
       -- NB. `MachineState` here does not contain the `Stack` nor the `PC`, thus incomplete.
       let μ'incomplete : MachineState :=
         { μ'ₘ with
-            returnData   := μ'ₒ
             gasAvailable := μ'_g
-            activeWords :=
-              let m : ℕ:= MachineState.M evmState.toMachineState.activeWords.toNat inOffset.toNat inSize.toNat
-              .ofNat <| MachineState.M m outOffset.toNat outSize.toNat
 
         }
 
@@ -296,6 +290,7 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
               { evmState' with
                   activeWords := .ofNat <| MachineState.M evmState.activeWords.toNat μ₁.toNat μ₂.toNat
                   returnData := newReturnData
+                  H_return := ByteArray.empty
                   gasAvailable :=
                     .ofNat <| evmState.gasAvailable.toNat - L (evmState.gasAvailable.toNat) + g'.toNat
               }
@@ -354,6 +349,7 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
               { evmState' with
                 activeWords := .ofNat <| MachineState.M evmState.activeWords.toNat μ₁.toNat μ₂.toNat
                 returnData := newReturnData
+                H_return := ByteArray.empty
                 gasAvailable := .ofNat <| evmState.gasAvailable.toNat - L (evmState.gasAvailable.toNat) + g'.toNat
               }
             .ok <| evmState'.replaceStackAndIncrPC (stack.push x)

@@ -97,6 +97,21 @@ def returndatacopy (self : MachineState) (mstart rstart size : UInt256) : Machin
       .ofNat (MachineState.M self.activeWords.toNat mstart.toNat size.toNat)
   }
 
+def finishExternalCall
+    (self : MachineState) (returnData : ByteArray)
+    (inOffset inSize outOffset outSize : UInt256) : MachineState :=
+  let copyLen := min outSize.toNat returnData.size
+  let self := writeBytes returnData 0 self outOffset.toNat copyLen
+  { self with
+    activeWords :=
+      .ofNat <|
+        MachineState.M
+          (MachineState.M self.activeWords.toNat inOffset.toNat inSize.toNat)
+          outOffset.toNat outSize.toNat
+    returnData := returnData
+    H_return := ByteArray.empty
+  }
+
 
 def evmReturn (self : MachineState) (mstart s : UInt256) : MachineState :=
   { self with
