@@ -795,7 +795,7 @@ def Θ (fuel : Nat)
   let (createdAccounts, z, σ'', g', A'', out) ←
     match c with
       | ToExecute.Precompiled p =>
-        .ok <| (∅, runPrecompiledContract p σ₁ g A I)
+        .ok <| (createdAccounts, runPrecompiledContract p σ₁ g A I)
       | ToExecute.Code _ =>
         match Ξ fuel createdAccounts genesisBlockHeader blocks σ₁ σ₀
             chainContext g A I with
