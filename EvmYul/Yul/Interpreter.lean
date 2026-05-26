@@ -95,6 +95,48 @@ def setStatic (s : State) (p : Bool) : State :=
                         }
     .Ok sharedState' varstore
 
+def addAccessedAccount (s : State) (addr : AccountAddress) : State :=
+  s.setState (EvmYul.State.addAccessedAccount s.toState addr)
+
+def callRecipientCredit {τ : OperationType}
+    (accountMap : AccountMap τ)
+    (recipient : AccountAddress)
+    (value : UInt256) : AccountMap τ :=
+  match accountMap.find? recipient with
+  | none =>
+      if value != ⟨0⟩ then
+        accountMap.insert recipient
+          { (default : Account τ) with balance := value }
+      else
+        accountMap
+  | some account =>
+      accountMap.insert recipient
+        { account with balance := account.balance + value }
+
+def callSourceDebit {τ : OperationType}
+    (accountMap : AccountMap τ)
+    (source : AccountAddress)
+    (value : UInt256) : AccountMap τ :=
+  match accountMap.find? source with
+  | none => accountMap
+  | some account =>
+      accountMap.insert source
+        { account with balance := account.balance - value }
+
+def callTransferUnchecked {τ : OperationType}
+    (accountMap : AccountMap τ)
+    (source recipient : AccountAddress)
+    (value : UInt256) : AccountMap τ :=
+  callSourceDebit (callRecipientCredit accountMap recipient value) source value
+
+def callTransferAccountMap? (accountMap : AccountMap .Yul)
+    (source recipient : AccountAddress) (value : UInt256) :
+    Option (AccountMap .Yul) :=
+  if value ≤ (accountMap.find? source |>.option ⟨0⟩ (·.balance)) then
+    some (callTransferUnchecked accountMap source recipient value)
+  else
+    none
+
 def buildContractCallEmptyReturnState (s₀ : State) (accountMap₁ : Option (AccountMap .Yul)) (v : Literal) : Except Yul.Exception (State × List Literal) :=
     match s₀ with
     | .OutOfFuel => .error .OutOfFuel
@@ -132,23 +174,29 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
           | _ :: address_arg :: value :: inOffset :: inSize :: outOffset :: outSize :: _ =>
             if ¬s₀.executionEnv.perm ∧ value ≠ ⟨0⟩ then throw .StaticModeViolation
             let address := AccountAddress.ofUInt256 address_arg
+            let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
-            let accountMap₁Opt := (s₀.sharedState.accountMap.transferBalance .Yul s₀.executionEnv.codeOwner address value)
+            let accountMap₁Opt :=
+              callTransferAccountMap?
+                s₀.sharedState.accountMap
+                s₀.executionEnv.codeOwner
+                address
+                value
             match accountMap₁Opt with
               | .none =>
-                buildContractCallEmptyReturnState s₀ .none ⟨0⟩ -- Insufficient funds: return 0 to indicate error, with empty return data 
+                buildContractCallEmptyReturnState s₀Accessed .none ⟨0⟩ -- Insufficient funds: return 0 to indicate error, with empty return data 
               | .some accountMap₁ =>
                 if s₀.executionEnv.depth ≥ 1024
                 then
-                  buildContractCallEmptyReturnState s₀ .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
+                  buildContractCallEmptyReturnState s₀Accessed .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
                 else
-                  match s₀ with
+                  match s₀Accessed with
                   | .OutOfFuel => .error .OutOfFuel
                   | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
                   | .Ok sharedState varstore =>
                       match s₀.sharedState.accountMap.find? address with
                         | .none => 
-                          buildContractCallEmptyReturnState s₀ accountMap₁ ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
+                          buildContractCallEmptyReturnState s₀Accessed accountMap₁ ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                         | .some yulContract =>
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
@@ -157,7 +205,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
                                                     depth := s₀.executionEnv.depth + 1
-                                                }
+                                }
                           let sharedState₁ := { sharedState with
                                                   executionEnv := executionEnv₁,
                                                   memory := ByteArray.mk #[],
@@ -189,7 +237,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                                     }
                                 .ok (.Ok sharedState₃ varstore, [⟨1⟩])
                           | .error (.Revert s₂) =>
-                            restoreRevertedContractCallState s₀ s₂ outOffset outSize
+                            restoreRevertedContractCallState s₀Accessed s₂ outOffset outSize
                           | .error e => .error e
                           | .ok (s₂, _) =>
                             
@@ -229,22 +277,22 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
       | .STATICCALL =>
         match args with
           | _ :: address_arg :: inOffset :: inSize :: outOffset :: outSize :: _ =>
-            if ¬s₀.executionEnv.perm then throw .StaticModeViolation
-            let s₀Static : State := setStatic s₀ false
             let address := AccountAddress.ofUInt256 address_arg
-            let calldata₁ := s₀Static.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
+            let s₀Accessed := addAccessedAccount s₀ address
+            let s₀Static : State := setStatic s₀Accessed false
+            let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
           
-              if s₀Static.toSharedState.executionEnv.depth ≥ 1024
+              if s₀.executionEnv.depth ≥ 1024
               then
-                buildContractCallEmptyReturnState s₀Static .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
+                buildContractCallEmptyReturnState s₀Accessed .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
               else
                 match s₀Static with
                 | .OutOfFuel => .error .OutOfFuel
                 | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
                 | .Ok sharedState varstore =>
-                    match s₀Static.sharedState.accountMap.find? address with
+                    match s₀.sharedState.accountMap.find? address with
                       | .none => 
-                          buildContractCallEmptyReturnState s₀Static .none ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
+                          buildContractCallEmptyReturnState s₀Accessed .none ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                       | .some yulContract =>
                         let executionEnv₁ := { s₀Static.executionEnv with
                                                   calldata := calldata₁,
@@ -283,7 +331,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                                   }
                               .ok (setStatic (.Ok sharedState₃ varstore) s₀.executionEnv.perm, [⟨1⟩])
                           | .error (.Revert s₂) =>
-                              restoreRevertedContractCallState s₀ s₂ outOffset outSize
+                              restoreRevertedContractCallState s₀Accessed s₂ outOffset outSize
                           | .error e => .error e
                           | .ok (s₂, _) =>
                         
@@ -311,25 +359,30 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
       | .CALLCODE =>
         match args with
           | _ :: address_arg :: value :: inOffset :: inSize :: outOffset :: outSize :: _ =>
-            if ¬s₀.executionEnv.perm ∧ value ≠ ⟨0⟩ then throw .StaticModeViolation
             let address := AccountAddress.ofUInt256 address_arg
+            let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
-            let accountMap₁Opt := (s₀.sharedState.accountMap.transferBalance .Yul s₀.executionEnv.codeOwner s₀.executionEnv.codeOwner value)
+            let accountMap₁Opt :=
+              callTransferAccountMap?
+                s₀.sharedState.accountMap
+                s₀.executionEnv.codeOwner
+                s₀.executionEnv.codeOwner
+                value
             match accountMap₁Opt with
               | .none =>
-                  buildContractCallEmptyReturnState s₀ .none ⟨0⟩ -- Insufficient funds: return 0 to indicate error, with empty return data 
+                  buildContractCallEmptyReturnState s₀Accessed .none ⟨0⟩ -- Insufficient funds: return 0 to indicate error, with empty return data 
               | .some accountMap₁ =>
                 if s₀.executionEnv.depth ≥ 1024
                 then
-                  buildContractCallEmptyReturnState s₀ accountMap₁ ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
+                  buildContractCallEmptyReturnState s₀Accessed .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
                 else
-                  match s₀ with
+                  match s₀Accessed with
                   | .OutOfFuel => .error .OutOfFuel
                   | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
                   | .Ok sharedState varstore =>
                       match s₀.sharedState.accountMap.find? address with
                         | .none => 
-                            buildContractCallEmptyReturnState s₀ accountMap₁ ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
+                            buildContractCallEmptyReturnState s₀Accessed accountMap₁ ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                         | .some yulContract =>
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
@@ -370,7 +423,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                 .ok (.Ok sharedState₃ varstore, [⟨1⟩])
 
                           | .error (.Revert s₂) =>
-                            restoreRevertedContractCallState s₀ s₂ outOffset outSize
+                            restoreRevertedContractCallState s₀Accessed s₂ outOffset outSize
                           | .error e => .error e
                           | .ok (s₂, _) =>                            
                             let memory₃ := s₂.toMachineState.H_return.copySlice 0 s₀.toMachineState.memory outOffset.toNat (min outSize.toNat s₂.toMachineState.H_return.size)
@@ -398,18 +451,19 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
         match args with
           | _ :: address_arg :: inOffset :: inSize :: outOffset :: outSize :: _ =>
             let address := AccountAddress.ofUInt256 address_arg
+            let s₀Accessed := addAccessedAccount s₀ address
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
             if s₀.executionEnv.depth ≥ 1024
             then
-              buildContractCallEmptyReturnState s₀ .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
+              buildContractCallEmptyReturnState s₀Accessed .none ⟨0⟩ -- Reached depth limit: return 0 to indicate error, with empty return data 
             else
-              match s₀ with
+              match s₀Accessed with
               | .OutOfFuel => .error .OutOfFuel
               | .Checkpoint j => .ok (.Checkpoint j, [⟨0⟩])
               | .Ok sharedState varstore =>
                   match s₀.sharedState.accountMap.find? address with
                     | .none => 
-                      buildContractCallEmptyReturnState s₀ .none ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
+                      buildContractCallEmptyReturnState s₀Accessed .none ⟨1⟩ -- No contract at the provided address, return 1 to indicate success, with empty return data. (Like STOP opcode).
                     | .some yulContract =>
                       let executionEnv₁ := { sharedState.executionEnv with
                                                 calldata := calldata₁,
@@ -446,7 +500,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                                 }
                             .ok (.Ok sharedState₃ varstore, [⟨1⟩])
                         | .error (.Revert s₂) =>
-                          restoreRevertedContractCallState s₀ s₂ outOffset outSize
+                          restoreRevertedContractCallState s₀Accessed s₂ outOffset outSize
                         | .error e => .error e
                         | .ok (s₂, _) =>                        
                         let memory₃ := s₂.toMachineState.H_return.copySlice 0 s₀.toMachineState.memory outOffset.toNat (min outSize.toNat s₂.toMachineState.H_return.size)
