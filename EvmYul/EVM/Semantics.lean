@@ -136,6 +136,10 @@ def swap (n : ℕ) : Transformer :=
 local instance : MonadLift Option (Except EVM.ExecutionException) :=
   ⟨Option.option (.error .StackUnderflow) .ok⟩
 
+structure ChildFrameChainContext where
+  totalGasUsedInBlock : ℕ
+  transactionReceipts : Array TransactionReceipt
+
 mutual
 
 def call (fuel : Nat)
@@ -171,6 +175,9 @@ def call (fuel : Nat)
               (blocks := evmState.blocks)
               (σ  := σ)                                     -- σ in  Θ(σ, ..)
               (σ₀ := evmState.σ₀)
+              (chainContext :=
+                { totalGasUsedInBlock := evmState.totalGasUsedInBlock
+                  transactionReceipts := evmState.transactionReceipts })
               (A  := A')                                    -- A* in Θ(.., A*, ..)
               (s  := source)
               (o  := evmState.executionEnv.sender)          -- Iₒ in Θ(.., Iₒ, ..)
@@ -254,6 +261,8 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
                     evmState.blocks
                     σStar
                     evmState.σ₀
+                    { totalGasUsedInBlock := evmState.totalGasUsedInBlock
+                      transactionReceipts := evmState.transactionReceipts }
                     evmState.toState.substate
                     Iₐ
                     Iₒ
@@ -322,6 +331,8 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
                     evmState.blocks
                     σStar
                     evmState.σ₀
+                    { totalGasUsedInBlock := evmState.totalGasUsedInBlock
+                      transactionReceipts := evmState.transactionReceipts }
                     evmState.toState.substate
                     Iₐ
                     Iₒ
@@ -525,6 +536,7 @@ def Ξ -- Type `Ξ` using `\GX` or `\Xi`
   (blocks : ProcessedBlocks)
   (σ : AccountMap .EVM)
   (σ₀ : AccountMap .EVM)
+  (chainContext : ChildFrameChainContext)
   (g : UInt256)
   (A : Substate)
   (I : ExecutionEnv .EVM)
@@ -541,6 +553,8 @@ def Ξ -- Type `Ξ` using `\GX` or `\Xi`
         { defState with
             accountMap := σ
             σ₀ := σ₀
+            totalGasUsedInBlock := chainContext.totalGasUsedInBlock
+            transactionReceipts := chainContext.transactionReceipts
             executionEnv := I
             substate := A
             createdAccounts := createdAccounts
@@ -563,6 +577,7 @@ def Lambda
   (blocks : ProcessedBlocks)
   (σ : AccountMap .EVM)
   (σ₀ : AccountMap .EVM)
+  (chainContext : ChildFrameChainContext)
   (A : Substate)
   (s : AccountAddress)   -- sender
   (o : AccountAddress)   -- original transactor
@@ -647,7 +662,8 @@ def Lambda
     , perm      := w
     , blobVersionedHashes := blobVersionedHashes
     }
-  match Ξ f createdAccounts genesisBlockHeader blocks σStar σ₀ g AStar exEnv with
+  match Ξ f createdAccounts genesisBlockHeader blocks σStar σ₀
+      chainContext g AStar exEnv with
     | .error e =>
       if e == .OutOfFuel then throw .OutOfFuel
       .ok (a, createdAccounts, σ, ⟨0⟩, AStar, false, .empty)
@@ -717,6 +733,7 @@ def Θ (fuel : Nat)
       (blocks : ProcessedBlocks)
       (σ  : AccountMap .EVM)
       (σ₀  : AccountMap .EVM)
+      (chainContext : ChildFrameChainContext)
       (A  : Substate)
       (s  : AccountAddress)
       (o  : AccountAddress)
@@ -780,7 +797,8 @@ def Θ (fuel : Nat)
       | ToExecute.Precompiled p =>
         .ok <| (∅, runPrecompiledContract p σ₁ g A I)
       | ToExecute.Code _ =>
-        match Ξ fuel createdAccounts genesisBlockHeader blocks σ₁ σ₀ g A I with
+        match Ξ fuel createdAccounts genesisBlockHeader blocks σ₁ σ₀
+            chainContext g A I with
           | .error e =>
             if e == .OutOfFuel then throw .OutOfFuel
             pure (createdAccounts, false, σ, ⟨0⟩, A, .empty)
@@ -871,6 +889,8 @@ def Υ (fuel : ℕ)
             blocks
             σ₀
             σ₀
+            { totalGasUsedInBlock := 0
+              transactionReceipts := #[] }
             AStar
             S_T
             S_T
@@ -895,6 +915,8 @@ def Υ (fuel : ℕ)
             blocks
             σ₀
             σ₀
+            { totalGasUsedInBlock := 0
+              transactionReceipts := #[] }
             AStar
             S_T
             S_T
