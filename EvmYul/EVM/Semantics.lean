@@ -708,6 +708,75 @@ def Lambda
       | some ζ => .some <| BE 255 ++ s ++ ζ ++ ffi.KEC i
 
 /--
+Recipient-credit step of the message-call account-map prelude.
+
+This mirrors equations (124)-(126) for `Θ`: a missing recipient is
+materialized only for nonzero value, while an existing recipient is credited.
+-/
+def thetaCallRecipientCredit
+    (σ : AccountMap .EVM) (r : AccountAddress) (v : UInt256) :
+    AccountMap .EVM :=
+  match σ.find? r with
+  | none =>
+      if v != ⟨0⟩ then
+        σ.insert r { (default : Account .EVM) with balance := v }
+      else
+        σ
+  | some acc =>
+      σ.insert r { acc with balance := acc.balance + v }
+
+/--
+Sender-debit step of the message-call account-map prelude.
+
+The balance precondition is checked by the caller-side opcode semantics before
+`Θ`; this helper only mirrors the unconditional debit shape used inside `Θ`.
+-/
+def thetaCallSourceDebit
+    (σ : AccountMap .EVM) (s : AccountAddress) (v : UInt256) :
+    AccountMap .EVM :=
+  match σ.find? s with
+  | none => σ
+  | some acc =>
+      σ.insert s { acc with balance := acc.balance - v }
+
+/--
+Full account-map prelude for an EVM message call.
+-/
+def thetaCallTransfer
+    (σ : AccountMap .EVM) (s r : AccountAddress) (v : UInt256) :
+    AccountMap .EVM :=
+  thetaCallSourceDebit (thetaCallRecipientCredit σ r v) s v
+
+/--
+Execution environment installed for a `Θ` child frame.
+-/
+def thetaCallExecutionEnv
+    (blobVersionedHashes : List ByteArray)
+    (s o r : AccountAddress)
+    (c : ToExecute .EVM)
+    (p v' : UInt256)
+    (d : ByteArray)
+    (e : Nat)
+    (H : BlockHeader)
+    (w : Bool) : ExecutionEnv .EVM :=
+  {
+    codeOwner := r
+    sender    := o
+    gasPrice  := p.toNat
+    calldata  := d
+    source    := s
+    weiValue  := v'
+    depth     := e
+    perm      := w
+    code      :=
+      match c with
+        | ToExecute.Precompiled _ => default
+        | ToExecute.Code code => code
+    header    := H
+    blobVersionedHashes := blobVersionedHashes
+  }
+
+/--
 Message cal
 `σ`  - evm state
 `A`  - accrued substate
@@ -755,41 +824,10 @@ def Θ (fuel : Nat)
     | fuel + 1 => do
 
   -- (124) (125) (126)
-  let σ'₁ :=
-    match σ.find? r with
-      | none =>
-        if v != ⟨0⟩ then
-          σ.insert r { (default : Account .EVM) with balance := v}
-        else
-          σ
-      | some acc =>
-        σ.insert r { acc with balance := acc.balance + v}
-
-  -- If `v` ≠ 0 then the sender must have passed the `INSUFFICIENT_ACCOUNT_FUNDS` check
-  let σ₁ :=
-    match σ'₁.find? s with
-      | none => σ'₁
-      | some acc =>
-        σ'₁.insert s { acc with balance := acc.balance - v}
+  let σ₁ := thetaCallTransfer σ s r v
 
   let I : ExecutionEnv .EVM :=
-    {
-      codeOwner := r        -- Equation (132)
-      sender    := o        -- Equation (133)
-      gasPrice  := p.toNat  -- Equation (134)
-      calldata := d        -- Equation (135)
-      source    := s        -- Equation (136)
-      weiValue  := v'       -- Equation (137)
-      depth     := e        -- Equation (138)
-      perm      := w        -- Equation (139)
-      -- Note that we don't use an address, but the actual code. Equation (141)-ish.
-      code      :=
-        match c with
-          | ToExecute.Precompiled _ => default
-          | ToExecute.Code code => code
-      header    := H
-      blobVersionedHashes := blobVersionedHashes
-    }
+    thetaCallExecutionEnv blobVersionedHashes s o r c p v' d e H w
 
   -- Equation (131)
   let (createdAccounts, z, σ'', g', A'', out) ←
