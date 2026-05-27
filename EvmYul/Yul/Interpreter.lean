@@ -100,8 +100,16 @@ def restoreSuccessfulContractCallState (s₀ s₂ : State)
       let sharedState₃ :=
         { sharedState₀ with
           toMachineState := machineState₃
-          accountMap := sharedState₂.accountMap
-          substate := sharedState₂.substate
+          accountMap :=
+            if sharedState₂.accountMap.isEmpty then
+              sharedState₀.accountMap
+            else
+              sharedState₂.accountMap
+          substate :=
+            if sharedState₂.accountMap.isEmpty then
+              sharedState₀.substate
+            else
+              sharedState₂.substate
           createdAccounts := sharedState₂.createdAccounts
         }
       .ok (.Ok sharedState₃ varstore, [⟨1⟩])
