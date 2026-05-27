@@ -310,7 +310,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                               }
                           let s₁ : State := .Ok sharedState₁ default
                           
-                          match callDispatcher fuel₁ .none s₁ with
+                          match callDispatcher fuel₁ (some yulContract.code) s₁ with
                           | .error (.YulHalt s₂ _) => 
                             restoreSuccessfulContractCallState s₀ s₂ varstore
                               s₂.toMachineState.H_return
@@ -378,7 +378,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                             }
                         let s₁ : State := .Ok sharedState₁ default
                         
-                        match callDispatcher fuel₁ .none s₁ with
+                        match callDispatcher fuel₁ (some yulContract.code) s₁ with
                           | .error (.YulHalt s₂ _) =>
                           restoreSuccessfulContractCallState s₀ s₂ varstore
                             s₂.toMachineState.H_return
@@ -456,7 +456,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                               }
                           let s₁ : State := .Ok sharedState₁ default
                           
-                          match callDispatcher fuel₁ yulContract.code s₁ with
+                          match callDispatcher fuel₁ (some yulContract.code) s₁ with
                           | .error (.YulHalt s₂ _) =>
                             restoreSuccessfulContractCallState s₀ s₂ varstore
                               s₂.toMachineState.H_return
@@ -519,7 +519,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                           }
                       let s₁ : State := .Ok sharedState₁ default
                       
-                      match callDispatcher fuel₁ yulContract.code s₁ with
+                      match callDispatcher fuel₁ (some yulContract.code) s₁ with
                         | .error (.YulHalt s₂ _) =>
                         restoreSuccessfulContractCallState s₀ s₂ varstore
                           s₂.toMachineState.H_return
