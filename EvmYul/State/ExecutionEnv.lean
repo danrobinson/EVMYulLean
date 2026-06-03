@@ -30,6 +30,7 @@ structure ExecutionEnv (τ : OperationType) where
   depth     : ℕ
   perm      : Bool
   blobVersionedHashes : List ByteArray
+  codeBytes : ByteArray := default
   deriving BEq, Inhabited, Repr
 
 def prevRandao {τ} (e : ExecutionEnv τ) : UInt256 :=

@@ -280,6 +280,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
                                                     code := default,
+                                                    codeBytes := default,
                                                     codeOwner := address,
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
@@ -297,6 +298,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
                                                     code := yulContract.code,
+                                                    codeBytes := yulContract.codeBytes,
                                                     codeOwner := address,
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
@@ -312,7 +314,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                           
                           match callDispatcher fuel₁ (some yulContract.code) s₁ with
                           | .error (.YulHalt s₂ _) => 
-                            restoreSuccessfulContractCallState s₀ s₂ varstore
+                            restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                               s₂.toMachineState.H_return
                               inOffset inSize outOffset outSize
                           | .error (.Revert s₂) =>
@@ -320,7 +322,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                               inOffset inSize outOffset outSize
                           | .error e => .error e
                           | .ok (s₂, _) =>
-                            restoreSuccessfulContractCallState s₀ s₂ varstore
+                            restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                               ByteArray.empty inOffset inSize outOffset outSize
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | .STATICCALL =>
@@ -349,6 +351,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                         let executionEnv₁ := { s₀Static.executionEnv with
                                                   calldata := calldata₁,
                                                   code := default,
+                                                  codeBytes := default,
                                                   codeOwner := address,
                                                   source := s₀Static.executionEnv.codeOwner,
                                                   weiValue := ⟨0⟩
@@ -366,6 +369,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                         let executionEnv₁ := { s₀Static.executionEnv with
                                                   calldata := calldata₁,
                                                   code := yulContract.code,
+                                                  codeBytes := yulContract.codeBytes,
                                                   codeOwner := address,
                                                   source := s₀Static.executionEnv.codeOwner,
                                                   weiValue := ⟨0⟩
@@ -380,7 +384,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                         
                         match callDispatcher fuel₁ (some yulContract.code) s₁ with
                           | .error (.YulHalt s₂ _) =>
-                          restoreSuccessfulContractCallState s₀ s₂ varstore
+                          restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                             s₂.toMachineState.H_return
                             inOffset inSize outOffset outSize
                           | .error (.Revert s₂) =>
@@ -388,7 +392,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                                 inOffset inSize outOffset outSize
                           | .error e => .error e
                           | .ok (s₂, _) =>
-                          restoreSuccessfulContractCallState s₀ s₂ varstore
+                          restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                             ByteArray.empty inOffset inSize outOffset outSize
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | .CALLCODE =>
@@ -426,6 +430,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
                                                     code := default,
+                                                    codeBytes := default,
                                                     codeOwner := s₀.executionEnv.codeOwner,
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
@@ -443,6 +448,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                           let executionEnv₁ := { sharedState.executionEnv with
                                                     calldata := calldata₁,
                                                     code := yulContract.code,
+                                                    codeBytes := yulContract.codeBytes,
                                                     codeOwner := s₀.executionEnv.codeOwner,
                                                     source := s₀.executionEnv.codeOwner,
                                                     weiValue := value
@@ -458,7 +464,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                           
                           match callDispatcher fuel₁ (some yulContract.code) s₁ with
                           | .error (.YulHalt s₂ _) =>
-                            restoreSuccessfulContractCallState s₀ s₂ varstore
+                            restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                               s₂.toMachineState.H_return
                               inOffset inSize outOffset outSize
 
@@ -467,7 +473,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                               inOffset inSize outOffset outSize
                           | .error e => .error e
                           | .ok (s₂, _) =>                            
-                            restoreSuccessfulContractCallState s₀ s₂ varstore
+                            restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                               ByteArray.empty inOffset inSize outOffset outSize
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | .DELEGATECALL =>
@@ -494,6 +500,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                       let executionEnv₁ := { sharedState.executionEnv with
                                                 calldata := calldata₁,
                                                 code := default,
+                                                codeBytes := default,
                                                 codeOwner := s₀.executionEnv.codeOwner
                                                 depth := s₀.executionEnv.depth + 1
                                             }
@@ -509,6 +516,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                       let executionEnv₁ := { sharedState.executionEnv with
                                                 calldata := calldata₁,
                                                 code := yulContract.code,
+                                                codeBytes := yulContract.codeBytes,
                                                 codeOwner := s₀.executionEnv.codeOwner
                                                 depth := s₀.executionEnv.depth + 1
                                             }
@@ -521,7 +529,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                       
                       match callDispatcher fuel₁ (some yulContract.code) s₁ with
                         | .error (.YulHalt s₂ _) =>
-                        restoreSuccessfulContractCallState s₀ s₂ varstore
+                        restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                           s₂.toMachineState.H_return
                           inOffset inSize outOffset outSize
                         | .error (.Revert s₂) =>
@@ -529,7 +537,7 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
                             inOffset inSize outOffset outSize
                         | .error e => .error e
                         | .ok (s₂, _) =>                        
-                        restoreSuccessfulContractCallState s₀ s₂ varstore
+                        restoreSuccessfulContractCallState s₀Accessed s₂ varstore
                           ByteArray.empty inOffset inSize outOffset outSize
           | _ => .error .InvalidArguments -- Incorrect number of arguments, this case should be impossible if the Yul code is parsed correctly. Guaranteed by the compiler.
       | _ => match step prim .none s₀ args with

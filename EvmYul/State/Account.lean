@@ -80,6 +80,7 @@ structure PersistentAccountState (τ : OperationType) where
   balance  : UInt256
   storage  : Storage
   code     : (Yul.Ast.contractCode τ)
+  codeBytes : ByteArray := default
   deriving BEq, Inhabited, Repr
 
 /--
@@ -98,6 +99,8 @@ a Merkle Tree. KEVM implemets it as just an key/value map.
 
 For now, we assume no global map `GM` with which `GM[code_hash] ≡ code`.
 - `code`
+- `codeBytes` -- source-side byte image used by Yul code-image operations
+  when this account is entered by a call frame.
 -/
 structure Account (τ : OperationType) extends PersistentAccountState τ where
   tstorage : Storage

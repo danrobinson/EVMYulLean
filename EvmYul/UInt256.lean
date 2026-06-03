@@ -357,6 +357,80 @@ private lemma fromBytes'_toBytes' {x : ℕ} : fromBytes' (toBytes' x) = x := by
     simp [UInt8.size, add_comm]
     apply Nat.div_add_mod
 
+private lemma fromBytes'_cons_mod (b : UInt8) (bs : List UInt8) :
+    fromBytes' (b :: bs) % UInt8.size = b.toFin.val := by
+  unfold fromBytes'
+  rw [show 2 ^ 8 = UInt8.size by native_decide]
+  rw [Nat.add_mul_mod_self_left]
+  exact Nat.mod_eq_of_lt b.toFin.isLt
+
+private lemma fromBytes'_cons_div (b : UInt8) (bs : List UInt8) :
+    fromBytes' (b :: bs) / UInt8.size = fromBytes' bs := by
+  unfold fromBytes'
+  rw [show 2 ^ 8 = UInt8.size by native_decide]
+  rw [Nat.add_mul_div_left _ _ (by decide : 0 < UInt8.size)]
+  rw [Nat.div_eq_of_lt b.toFin.isLt]
+  rw [zero_add]
+  cases bs <;> rfl
+
+private lemma fromBytes'_eq_of_length_eq
+    {xs ys : List UInt8} {n : ℕ}
+    (hxs : xs.length = n) (hys : ys.length = n)
+    (hEq : fromBytes' xs = fromBytes' ys) :
+    xs = ys := by
+  induction n generalizing xs ys with
+  | zero =>
+      cases xs <;> cases ys <;> simp at hxs hys ⊢
+  | succ n ih =>
+      cases xs with
+      | nil => simp at hxs
+      | cons x xs =>
+          cases ys with
+          | nil => simp at hys
+          | cons y ys =>
+              simp at hxs hys
+              have hHeadNat : x.toFin.val = y.toFin.val := by
+                have hMod := congrArg (fun value => value % UInt8.size) hEq
+                simpa [fromBytes'_cons_mod] using hMod
+              have hHead : x = y :=
+                UInt8.eq_of_toFin_eq (Fin.ext hHeadNat)
+              subst y
+              have hTailEq : fromBytes' xs = fromBytes' ys := by
+                have hDiv := congrArg (fun value => value / UInt8.size) hEq
+                simpa [fromBytes'_cons_div] using hDiv
+              have hTail : xs = ys := ih hxs hys hTailEq
+              subst ys
+              rfl
+
+theorem zeroPadBytes_toBytes'_fromBytes'_eq_of_length_eq_32
+    {bs : List UInt8} (hLen : bs.length = 32) :
+    zeroPadBytes 32 (toBytes' (fromBytes' bs)) = bs := by
+  apply fromBytes'_eq_of_length_eq
+  · exact zeroPadBytes_len (toBytes'_UInt256_le (by
+      unfold UInt256.size
+      exact fromBytes'_UInt256_le hLen))
+  · exact hLen
+  · rw [fromBytes'_zeroPadBytes_32_eq]
+    exact fromBytes'_toBytes'
+
+theorem toBytesBigEndian_length_le_of_UInt256 (value : UInt256) :
+    (toBytesBigEndian value.toNat).length ≤ 32 := by
+  unfold toBytesBigEndian
+  simp [UInt256.toNat]
+  exact toBytes'_UInt256_le value.val.isLt
+
+theorem zeroPadBytes_toBytesBigEndian_fromBytesBigEndian_eq_of_length_eq_32
+    {bs : List UInt8} (hLen : bs.length = 32) :
+    List.replicate (32 - (toBytesBigEndian (fromBytesBigEndian bs)).length)
+        0 ++ toBytesBigEndian (fromBytesBigEndian bs) =
+      bs := by
+  have hLittle :=
+    zeroPadBytes_toBytes'_fromBytes'_eq_of_length_eq_32
+      (bs := bs.reverse) (by simpa [List.length_reverse] using hLen)
+  have hRev := congrArg List.reverse hLittle
+  simpa [toBytesBigEndian, fromBytesBigEndian, zeroPadBytes,
+    List.reverse_append, List.length_reverse] using hRev
+
 def fromBytes! (bs : List UInt8) : ℕ := fromBytes' (bs.take 32)
 
 private lemma fromBytes_was_good_all_year_long
@@ -368,6 +442,42 @@ private lemma fromBytes_was_good_all_year_long
 
 @[simp]
 lemma fromBytes_wasnt_naughty : fromBytes! bs < 2^256 := fromBytes_was_good_all_year_long (by simp)
+
+theorem fromBytesBigEndian_lt_UInt256_size_of_length_le_32
+    {bs : List UInt8} (hLen : bs.length ≤ 32) :
+    fromBytesBigEndian bs < UInt256.size := by
+  unfold fromBytesBigEndian UInt256.size
+  exact fromBytes_was_good_all_year_long
+    (bs := bs.reverse) (by simpa [List.length_reverse] using hLen)
+
+theorem UInt256.toNat_ofNat_of_lt {n : Nat} (hLt : n < UInt256.size) :
+    (UInt256.ofNat n).toNat = n := by
+  unfold UInt256.ofNat UInt256.toNat
+  change (Fin.ofNat UInt256.size n).val = n
+  rw [Fin.val_ofNat]
+  exact Nat.mod_eq_of_lt hLt
+
+theorem UInt256.toNat_ofNat_fromBytesBigEndian_of_length_le_32
+    {bs : List UInt8} (hLen : bs.length ≤ 32) :
+    (UInt256.ofNat (fromBytesBigEndian bs)).toNat =
+      fromBytesBigEndian bs :=
+  UInt256.toNat_ofNat_of_lt
+    (fromBytesBigEndian_lt_UInt256_size_of_length_le_32 hLen)
+
+theorem zeroPadBytes_toBytesBigEndian_ofNat_fromBytesBigEndian_eq_of_length_eq_32
+    {bs : List UInt8} (hLen : bs.length = 32) :
+    List.replicate
+        (32 -
+          (toBytesBigEndian
+            (UInt256.ofNat (fromBytesBigEndian bs)).toNat).length)
+        0 ++
+      toBytesBigEndian
+        (UInt256.ofNat (fromBytesBigEndian bs)).toNat =
+      bs := by
+  rw [UInt256.toNat_ofNat_fromBytesBigEndian_of_length_le_32
+    (by omega : bs.length ≤ 32)]
+  exact zeroPadBytes_toBytesBigEndian_fromBytesBigEndian_eq_of_length_eq_32
+    hLen
 
 -- Convenience function for spooning into UInt256.
 -- Given that I 'accept' UInt8, might as well live with UInt256.

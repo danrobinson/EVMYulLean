@@ -33,6 +33,13 @@ def codeCopy  (self : SharedState .EVM) (mstart cstart size : UInt256) : SharedS
       .ofNat (MachineState.M self.activeWords.toNat mstart.toNat size.toNat)
   }
 
+def codeBytesCopy {τ} (self : SharedState τ) (mstart cstart size : UInt256) : SharedState τ :=
+  { self with
+    memory := self.executionEnv.codeBytes.write cstart.toNat self.memory mstart.toNat size.toNat
+    activeWords :=
+      .ofNat (MachineState.M self.activeWords.toNat mstart.toNat size.toNat)
+  }
+
 def extCodeCopy' (self : SharedState .EVM) (acc mstart cstart size : UInt256) : SharedState .EVM :=
   let mstart := mstart.toNat
   let cstart := cstart.toNat
