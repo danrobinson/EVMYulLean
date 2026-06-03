@@ -28,20 +28,19 @@ def idSubsequentChar : Array Char := Id.run <| do
   return arr.push '.'
 
 def idFn : ParserFn := fun c s => Id.run do
-  let input := c.input
   let start := s.pos
-  if h : input.atEnd start then
+  if h : c.atEnd start then
     s.mkEOIError
   else
-    let fst := input.get' start h
+    let fst := c.get' start h
     if not (idFirstChar.contains fst) then
       return s.mkError "yul identifier"
-    let s := takeWhileFn idSubsequentChar.contains c (s.next input start)
+    let s := takeWhileFn idSubsequentChar.contains c (s.next c start)
     let stop := s.pos
-    let name := .str .anonymous (input.extract start stop)
+    let name := .str .anonymous (c.extract start stop)
     if yulKeywords.contains name.lastComponentAsString then
       return s.mkError "yul identifier"
-    mkIdResult start none name c s
+    (mkIdResult start none name) c s
 
 def idNoAntiquot : Parser := { fn := idFn }
 
@@ -63,56 +62,50 @@ end
 @[run_parser_attribute_hooks]
 def ident : Parser := withAntiquot (mkAntiquot "ident" identKind) idNoAntiquot
 
-declare_syntax_cat expr
-declare_syntax_cat stmt
+declare_syntax_cat yulExpr
+declare_syntax_cat yulStmt
 
-syntax identifier_list := ident,*
-syntax typed_identifier_list := ident,*
-syntax function_call := ident "(" expr,* ")"
-syntax block := "{" stmt* "}"
-syntax if' := "if" expr block
-syntax function_definition :=
-  "function" ident "(" typed_identifier_list ")"
-    ("->" typed_identifier_list)?
-    block
-syntax params_list := "[" typed_identifier_list "]"
-syntax variable_declaration := "let" ident (":=" expr)?
+syntax yulIdentifierList := ident,*
+syntax yulTypedIdentifierList := ident,*
+syntax yulFunctionCall := ident "(" yulExpr,* ")"
+syntax yulBlock := "{" yulStmt* "}"
+syntax yulIf := "if" yulExpr yulBlock
+syntax yulFunctionDefinition :=
+  "function" ident "(" yulTypedIdentifierList ")"
+    ("->" yulTypedIdentifierList)?
+    yulBlock
+syntax yulParamsList := "[" yulTypedIdentifierList "]"
+syntax yulVariableDeclaration := "let" ident (":=" yulExpr)?
 -- syntax let_str_literal := "let" ident ":=" str -- TODO(fix)
-syntax variable_declarations := "let" typed_identifier_list (":=" expr)?
-syntax for_loop := "for" block expr block block
-syntax assignment := identifier_list ":=" expr
+syntax yulVariableDeclarations := "let" yulTypedIdentifierList (":=" yulExpr)?
+syntax yulForLoop := "for" yulBlock yulExpr yulBlock yulBlock
+syntax yulAssignment := yulIdentifierList ":=" yulExpr
 
-syntax stmtlist := stmt*
+syntax yulStmtList := yulStmt*
 
-syntax block : stmt
-syntax if' : stmt
-syntax function_definition : stmt
-syntax variable_declarations : stmt
-syntax assignment : stmt
-syntax expr : stmt
--- syntax let_str_literal : stmt -- TODO(fix)
-syntax for_loop : stmt
-syntax "break" : stmt
-syntax "continue" : stmt
-syntax "leave" : stmt
+syntax yulBlock : yulStmt
+syntax yulIf : yulStmt
+syntax yulFunctionDefinition : yulStmt
+syntax yulVariableDeclarations : yulStmt
+syntax yulAssignment : yulStmt
+syntax yulExpr : yulStmt
+-- syntax let_str_literal : yulStmt -- TODO(fix)
+syntax yulForLoop : yulStmt
+syntax "break" : yulStmt
+syntax "continue" : yulStmt
+syntax "leave" : yulStmt
 
-syntax ident : expr
-syntax numLit : expr
-syntax function_call: expr
+syntax ident : yulExpr
+syntax numLit : yulExpr
+syntax yulFunctionCall: yulExpr
 
-syntax default := "default" "{" stmt* "}"
-syntax case := "case" expr "{" stmt* "}"
-syntax switch := "switch" expr case+ (default)?
-syntax switch_default := "switch" expr default
+syntax yulDefault := "default" yulBlock
+syntax yulCase := "case" yulExpr yulBlock
+syntax yulSwitch := "switch" yulExpr yulCase* (yulDefault)?
+syntax yulSwitchDefault := "switch" yulExpr yulDefault
 
-syntax switch : stmt
-syntax switch_default : stmt
-
-scoped syntax:max "<<" expr ">>" : term
-scoped syntax:max "<f" function_definition ">" : term
-scoped syntax:max "<s" stmt ">" : term
-scoped syntax:max "<ss" stmt ">" : term
-scoped syntax:max "<params" params_list ">" : term
+syntax yulSwitch : yulStmt
+syntax yulSwitchDefault : yulStmt
 
 def translateString (s : String) : TermElabM Term := 
   pure (Syntax.mkStrLit s)
@@ -127,11 +120,11 @@ partial def translatePrimOp (primOp : PrimOp) : TermElabM Term := do
   where
     familyAndInstr (primOp : PrimOp) : TermElabM (String × String) := do
       let family :: instr :: [] := toString primOp |>.splitOn | throwError s!"{primOp} shape not <family> <instruction>"
-      pure (family, instr.drop 1 |>.dropRight 1)
+      pure (family, (instr.drop 1 |>.dropEnd 1).toString)
     YulTag : Name := "EvmYul.OperationType.Yul".toName
 
-partial def translateIdent (idn : TSyntax `ident) : TSyntax `term :=
-  Syntax.mkStrLit idn.getId.lastComponentAsString
+partial def translateIdent (idn : Syntax) : TSyntax `term :=
+  Syntax.mkStrLit (TSyntax.getId (TSyntax.mk (ks := `ident) idn)).lastComponentAsString
 
 def parseFunction : String → PrimOp ⊕ Identifier
   | "add" => .inl .ADD
@@ -204,12 +197,14 @@ def parseFunction : String → PrimOp ⊕ Identifier
   | "number" => .inl .NUMBER
   | userF => .inr userF
 
-partial def translateExpr (expr : TSyntax `expr) : TermElabM Term :=
-  match expr with
-    | `(expr| $idn:ident) => `(Expr.Var $(translateIdent idn))
-    | `(expr| $num:num) => `(Expr.Lit (.ofNat $num))
-    | `(expr| $name:ident($args:expr,*)) => do
-      let args' ← (args : TSyntaxArray `expr).mapM translateExpr
+partial def translateExpr
+  (expr : Syntax)
+: TermElabM Term :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulExpr) expr) with
+    | `(yulExpr| $idn:ident) => `(Expr.Var $(translateIdent idn))
+    | `(yulExpr| $num:num) => `(Expr.Lit (.ofNat $num))
+    | `(yulExpr| $name:ident($args:yulExpr,*)) => do
+      let args' ← args.getElems.raw.mapM translateExpr
       let f' := parseFunction (TSyntax.getId name).lastComponentAsString
       match f' with
         | .inl primOp =>
@@ -220,72 +215,96 @@ partial def translateExpr (expr : TSyntax `expr) : TermElabM Term :=
           `(Expr.Call (Sum.inr $yulFunctionName) [$args',*])
     | _ => throwError "unknown expr"
 
-partial def translateExpr' (expr : TSyntax `expr) : TermElabM Term :=
-  match expr with
-  | `(expr| $num:num) => `(.ofNat $num)
+partial def translateExpr'
+  (expr : Syntax)
+: TermElabM Term :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulExpr) expr) with
+  | `(yulExpr| $num:num) => `(.ofNat $num)
   | exp => translateExpr exp
 
 partial def translateParamsList
-  (params : TSyntax `EvmYul.Yul.Notation.params_list)
+  (params : Syntax)
 : TermElabM Term :=
-  match params with
-  | `(params_list| [ $args:ident,* ]) => do
-    let args' := (args : TSyntaxArray _).map translateIdent
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulParamsList) params) with
+  | `(yulParamsList| [ $args:ident,* ]) => do
+    let args' := args.getElems.raw.map translateIdent
     `([$args',*])
-  | _ => throwError (toString params.raw)
+  | _ => throwError (toString params)
 
 mutual
-partial def translateFdef
-  (fdef : TSyntax `EvmYul.Yul.Notation.function_definition)
-: TermElabM Term :=
-  match fdef with
-  | `(function_definition| function $_:ident($args:ident,*) {$body:stmt*}) => do
-    let args' := (args : TSyntaxArray _).map translateIdent
-    let body' ← body.mapM translateStmt
-    `(EvmYul.Yul.Ast.FunctionDefinition.Def [$args',*] [] [$body',*])
-  | `(function_definition| function $_:ident($args:ident,*) -> $rets,* {$body:stmt*}) => do
-    let args' := (args : TSyntaxArray _).map translateIdent
-    let rets' := (rets : TSyntaxArray _).map translateIdent
-    let body' ← body.mapM translateStmt
-    `(EvmYul.Yul.Ast.FunctionDefinition.Def [$args',*] [$rets',*] [$body',*])
-  | _ => throwError (toString fdef.raw)
+partial def translateBlock
+  (block : Syntax)
+: TermElabM (Array Term) :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulBlock) block) with
+  | `(yulBlock| { $stmts:yulStmt* }) => stmts.raw.mapM translateStmt
+  | _ => throwError (toString block)
 
-partial def translateStmt (stmt : TSyntax `stmt) : TermElabM Term :=
-  match stmt with
+partial def translateDefault
+  (dflt : Syntax)
+: TermElabM (Array Term) :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulDefault) dflt) with
+  | `(yulDefault| default $body:yulBlock) => translateBlock body
+  | _ => throwError (toString dflt)
+
+partial def translateCase
+  (c : Syntax)
+: TermElabM Term :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulCase) c) with
+  | `(yulCase| case $lit:yulExpr $body:yulBlock) => do
+    let lit ← translateExpr' lit
+    let body ← translateBlock body
+    `(($lit, [$body,*]))
+  | _ => throwError (toString c)
+
+partial def translateFdef
+  (fdef : Syntax)
+: TermElabM Term :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulFunctionDefinition) fdef) with
+  | `(yulFunctionDefinition| function $_:ident($args:ident,*) $body:yulBlock) => do
+    let args' := args.getElems.raw.map translateIdent
+    let body' ← translateBlock body
+    `(EvmYul.Yul.Ast.FunctionDefinition.Def [$args',*] [] [$body',*])
+  | `(yulFunctionDefinition| function $_:ident($args:ident,*) -> $rets,* $body:yulBlock) => do
+    let args' := args.getElems.raw.map translateIdent
+    let rets' := rets.getElems.raw.map translateIdent
+    let body' ← translateBlock body
+    `(EvmYul.Yul.Ast.FunctionDefinition.Def [$args',*] [$rets',*] [$body',*])
+  | _ => throwError (toString fdef)
+
+partial def translateStmt
+  (stmt : Syntax)
+: TermElabM Term :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulStmt) stmt) with
 
   -- Block
-  | `(stmt| {$stmts:stmt*}) => do
-    let stmts' ← stmts.mapM translateStmt
+  | `(yulStmt| $body:yulBlock) => do
+    let stmts' ← translateBlock body
     `(Stmt.Block ([$stmts',*]))
 
   -- If
-  | `(stmt| if $cond:expr {$body:stmt*}) => do
+  | `(yulStmt| if $cond:yulExpr $body:yulBlock) => do
     let cond' ← translateExpr cond
-    let body' ← body.mapM translateStmt
+    let body' ← translateBlock body
     `(Stmt.If $cond' [$body',*])
 
   -- Switch
-  | `(stmt| switch $expr:expr $[case $lits { $cs:stmt* }]* $[default { $dflts:stmt* }]?) => do
+  | `(yulStmt| switch $expr:yulExpr $cases:yulCase* $[$dflt:yulDefault]?) => do
     let expr ← translateExpr expr
-    let lits ← lits.mapM translateExpr'
-    let cases ← cs.mapM (λ cc ↦ cc.mapM translateStmt)
-    let f (litCase : TSyntax `term × Array Term) : TermElabM Term := do
-      let (lit, cs) := litCase; `(($lit, [$cs,*]))
-    let switchCases ← lits.zip cases |>.mapM f
-    let dflt ← match dflts with
+    let switchCases ← cases.raw.mapM translateCase
+    let dflt ← match dflt with
                  | .none => `([])
-                 | .some dflts => `([$(←dflts.mapM translateStmt),*])
+                 | .some dflt => `([$(←translateDefault dflt),*])
     `(Stmt.Switch $expr [$switchCases,*] $dflt)
 
   -- Switch
-  | `(stmt| switch $expr:expr default {$dflts:stmt*}) => do
+  | `(yulStmt| switch $expr:yulExpr $dflt:yulDefault) => do
     let expr ← translateExpr expr
-    let dflt ← dflts.mapM translateStmt
+    let dflt ← translateDefault dflt
     `(Stmt.Switch $expr [] ([$dflt,*]))
 
   -- Let
-  | `(stmt| let $ids:ident,* := $expr:expr) => do
-    let ids' := (ids : TSyntaxArray _).map translateIdent
+  | `(yulStmt| let $ids:ident,* := $expr:yulExpr) => do
+    let ids' := ids.getElems.raw.map translateIdent
     let expr ← translateExpr expr
     `(Stmt.Let [$ids',*] (.some $expr))
 
@@ -301,57 +320,62 @@ partial def translateStmt (stmt : TSyntax `stmt) : TermElabM Term :=
   --   `(Stmt.LetEq $idn' _)
 
   -- Let
-  | `(stmt| let $ids:ident,*) => do
-    let ids' := (ids : TSyntaxArray _).map translateIdent
+  | `(yulStmt| let $ids:ident,*) => do
+    let ids' := ids.getElems.raw.map translateIdent
     `(Stmt.Let [$ids',*] .none)
 
   -- AssignCall
-  | `(stmt| $ids:ident,* := $expr:expr) => do
-    let ids' := (ids : TSyntaxArray _).map translateIdent
+  | `(yulStmt| $ids:ident,* := $expr:yulExpr) => do
+    let ids' := ids.getElems.raw.map translateIdent
     let expr ← translateExpr expr
     `(Stmt.Assign [$ids',*] $expr)
 
   -- ExprStmt
-  | `(stmt| $expr:expr) => do
+  | `(yulStmt| $expr:yulExpr) => do
     let expr ← translateExpr expr
     `(Stmt.ExprStmtCall $expr)
 
   -- For
-  | `(stmt| for {} $cond:expr {$post:stmt*} {$body:stmt*}) => do
+  | `(yulStmt| for $pre:yulBlock $cond:yulExpr $post:yulBlock $body:yulBlock) => do
+    let pre ← translateBlock pre
+    unless pre.isEmpty do
+      throwError "nonempty for pre-blocks are not supported by Yul notation"
     let cond' ← translateExpr cond
-    let post' ← post.mapM translateStmt
-    let body' ← body.mapM translateStmt
+    let post' ← translateBlock post
+    let body' ← translateBlock body
     `(Stmt.For $cond' [$post',*] [$body',*])
 
   -- Break
-  | `(stmt| break) => `(Stmt.Break)
+  | `(yulStmt| break) => `(Stmt.Break)
 
   -- Continue
-  | `(stmt| continue) => `(Stmt.Continue)
+  | `(yulStmt| continue) => `(Stmt.Continue)
 
   -- Leave
-  | `(stmt| leave) => `(Stmt.Leave)
+  | `(yulStmt| leave) => `(Stmt.Leave)
 
   -- Anything else
-  | _ => throwError (toString stmt.raw)
+  | _ => throwError (toString stmt)
 end
 
-partial def translateStmtList (stmt : TSyntax `stmt) : TermElabM Term :=
-  match stmt with
-  | `(stmt| {$stmts:stmt*}) => do
-    let stmts' ← stmts.mapM translateStmt
+partial def translateStmtList
+  (stmt : Syntax)
+: TermElabM Term :=
+  match (TSyntax.mk (ks := `EvmYul.Yul.Notation.yulStmt) stmt) with
+  | `(yulStmt| $body:yulBlock) => do
+    let stmts' ← translateBlock body
     `([$stmts',*])
-  | _ => throwError (toString stmt.raw)
+  | _ => throwError (toString stmt)
 
-private def elabWith {β : SyntaxNodeKinds}
-  (x : Syntax) (translator : TSyntax β → TermElabM Term) : TermElabM Lean.Expr := do
-  elabTerm (←translator (TSyntax.mk (ks := β) x)) .none
+private def elabWith
+  (x : Syntax) (translator : Syntax → TermElabM Term) : TermElabM Lean.Expr := do
+  elabTerm (←translator x) .none
 
-elab "<<" e:expr ">>"               : term => elabWith e translateExpr
-elab "<f" f:function_definition ">" : term => elabWith f translateFdef
-elab "<s" s:stmt ">"                : term => elabWith s translateStmt
-elab "<ss" ss:stmt ">"              : term => elabWith ss translateStmtList
-elab "<params" p:params_list ">"    : term => elabWith p translateParamsList
+scoped elab:max "<<" e:yulExpr ">>"                    : term => elabWith e translateExpr
+scoped elab:max "<f" f:yulFunctionDefinition ">"       : term => elabWith f translateFdef
+scoped elab:max "<s" s:yulStmt ">"                     : term => elabWith s translateStmt
+scoped elab:max "<ss" ss:yulStmt ">"                   : term => elabWith ss translateStmtList
+scoped elab:max "<params" p:yulParamsList ">"          : term => elabWith p translateParamsList
 
 def f : FunctionDefinition := <f
   function sort2(a, b) -> x, y {
