@@ -103,7 +103,7 @@ end DebuggingAndProfiling
 end EvmYul
 
 def computeToList! {α}
-                   [LE α] [IsTrans α (· ≤ ·)] [IsAntisymm α (· ≤ ·)] [IsTotal α (· ≤ ·)]
+                   [LE α] [IsTrans α (· ≤ ·)] [Std.Antisymm (α := α) (· ≤ ·)] [Std.Total (α := α) (· ≤ ·)]
                    [DecidableRel (α := α) (· ≤ ·)] (m : Multiset α) : List α :=
   m.sort (· ≤ ·)
 
