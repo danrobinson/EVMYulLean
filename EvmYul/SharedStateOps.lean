@@ -40,12 +40,12 @@ def codeBytesCopy {τ} (self : SharedState τ) (mstart cstart size : UInt256) : 
       .ofNat (MachineState.M self.activeWords.toNat mstart.toNat size.toNat)
   }
 
-def extCodeCopy' (self : SharedState .EVM) (acc mstart cstart size : UInt256) : SharedState .EVM :=
+def extCodeCopy' {τ} (self : SharedState τ) (acc mstart cstart size : UInt256) : SharedState τ :=
   let mstart := mstart.toNat
   let cstart := cstart.toNat
   let size := size.toNat
   let addr := AccountAddress.ofUInt256 acc
-  let b : ByteArray := self.toState.lookupAccount addr |>.option .empty (·.code)
+  let b : ByteArray := self.toState.lookupAccount addr |>.option .empty State.accountCodeImage
   { self with
     memory := b.write cstart self.memory mstart size
     substate := .addAccessedAccount self.toState.substate addr

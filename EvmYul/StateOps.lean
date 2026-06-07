@@ -48,6 +48,11 @@ def balance {τ} (self : State τ) (k : UInt256) : State τ × UInt256 :=
   let addr := AccountAddress.ofUInt256 k
   (self.addAccessedAccount addr, self.accountMap.find? addr |>.elim ⟨0⟩ (·.balance))
 
+def accountCodeImage {τ} (account : Account τ) : ByteArray :=
+  match τ with
+  | .EVM => account.code
+  | .Yul => account.codeBytes
+
 def initialiseAccount (addr : AccountAddress) (self : State .EVM) : State .EVM :=
   if self.accountExists addr then self else self.updateAccount addr default
 
@@ -65,16 +70,21 @@ def selfStorage! {τ} (self : State τ) : Storage :=
 
 section CodeCopy
 
-def extCodeSize (self : State .EVM) (a : UInt256) : State .EVM × UInt256 :=
+def extCodeSize {τ} (self : State τ) (a : UInt256) : State τ × UInt256 :=
   let addr := AccountAddress.ofUInt256 a
-  let s := self.lookupAccount addr |>.option ⟨0⟩ (.ofNat ∘ ByteArray.size ∘ (·.code))
+  let s :=
+    self.lookupAccount addr |>.option ⟨0⟩
+      (.ofNat ∘ ByteArray.size ∘ accountCodeImage)
   (self.addAccessedAccount addr, s)
 
-def extCodeHash (self : State .EVM) (v : UInt256) : State .EVM × UInt256 :=
+def extCodeHash {τ} (self : State τ) (v : UInt256) : State τ × UInt256 :=
   let addr := AccountAddress.ofUInt256 v
   let newState := self.addAccessedAccount addr
   if dead self.accountMap addr then (newState, ⟨0⟩) else
-  let r := self.lookupAccount (AccountAddress.ofUInt256 v) |>.option ⟨0⟩ Account.codeHash
+  let r :=
+    self.lookupAccount (AccountAddress.ofUInt256 v) |>.option ⟨0⟩
+      (fun account =>
+        .ofNat <| fromByteArrayBigEndian (ffi.KEC (accountCodeImage account)))
   (newState, r)
 
 end CodeCopy

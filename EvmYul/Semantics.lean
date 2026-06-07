@@ -396,12 +396,10 @@ def step {τ : OperationType} (op : Operation τ) (arg : Option (UInt256 × Nat)
       dispatchTernaryCopyOp .Yul .codeBytesCopy
     | τ, .GASPRICE =>
       dispatchExecutionEnvOp τ (.ofNat ∘ ExecutionEnv.gasPrice)
-    | .EVM, .EXTCODESIZE =>
-      dispatchUnaryStateOp .EVM EvmYul.State.extCodeSize
-    | .Yul, .EXTCODESIZE =>
-      λ _ _ ↦ .error .YulEXTCODESIZENotImplemented
-    | .EVM, .EXTCODECOPY =>
-      dispatchQuaternaryCopyOp .EVM EvmYul.SharedState.extCodeCopy'
+    | τ, .EXTCODESIZE =>
+      dispatchUnaryStateOp τ EvmYul.State.extCodeSize
+    | τ, .EXTCODECOPY =>
+      dispatchQuaternaryCopyOp τ EvmYul.SharedState.extCodeCopy'
     | τ, .RETURNDATASIZE =>
       dispatchMachineStateOp τ EvmYul.MachineState.returndatasize
     | .EVM, .RETURNDATACOPY =>
@@ -419,7 +417,7 @@ def step {τ : OperationType} (op : Operation τ) (arg : Option (UInt256 × Nat)
             let mState' := yulState.toSharedState.toMachineState.returndatacopy a b c
             .ok <| (yulState.setMachineState mState', .none)
           | _ => .error .InvalidArguments
-    | .EVM, .EXTCODEHASH => dispatchUnaryStateOp .EVM EvmYul.State.extCodeHash
+    | τ, .EXTCODEHASH => dispatchUnaryStateOp τ EvmYul.State.extCodeHash
 
     | τ, .BLOCKHASH => dispatchUnaryStateOp τ (λ s v ↦ (s, EvmYul.State.blockHash s v))
     | τ, .COINBASE => dispatchStateOp τ (.ofNat ∘ Fin.val ∘ EvmYul.State.coinBase)
