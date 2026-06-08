@@ -406,6 +406,8 @@ def step {τ : OperationType} (op : Operation τ) (arg : Option (UInt256 × Nat)
             λ evmState ↦
         match evmState.stack.pop3 with
           | some ⟨stack', μ₀, μ₁, μ₂⟩ => do
+            if evmState.returnData.size < μ₁.toNat + μ₂.toNat then
+              .error .InvalidMemoryAccess
             let mState' := evmState.toMachineState.returndatacopy μ₀ μ₁ μ₂
             let evmState' := {evmState with toMachineState := mState'}
             .ok <| evmState'.replaceStackAndIncrPC stack'
@@ -414,6 +416,8 @@ def step {τ : OperationType} (op : Operation τ) (arg : Option (UInt256 × Nat)
       λ yulState lits ↦
         match lits with
           | [a, b, c] => do
+            if yulState.toSharedState.returnData.size < b.toNat + c.toNat then
+              .error .InvalidMemoryAccess
             let mState' := yulState.toSharedState.toMachineState.returndatacopy a b c
             .ok <| (yulState.setMachineState mState', .none)
           | _ => .error .InvalidArguments

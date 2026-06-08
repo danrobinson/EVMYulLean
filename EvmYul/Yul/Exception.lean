@@ -10,6 +10,7 @@ inductive Exception where
   | InvalidInstruction                            : Exception
   | OutOfFuel                                     : Exception
   | StaticModeViolation                           : Exception
+  | InvalidMemoryAccess                           : Exception
   | MissingContract (s : String)                  : Exception
   | MissingContractFunction (s : String)          : Exception
   | InvalidExpression                             : Exception
@@ -28,6 +29,7 @@ instance : Repr Exception where
       | .InvalidInstruction => "InvalidInstruction"
       | .OutOfFuel => "OutOfFuel"
       | .StaticModeViolation => "StaticModeViolation"
+      | .InvalidMemoryAccess => "InvalidMemoryAccess"
       | .MissingContract s => "MissingContract: " ++ s
       | .MissingContractFunction f => "MissingContractFunction: " ++ f
       | .InvalidExpression => "InvalidExpression"

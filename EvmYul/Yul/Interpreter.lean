@@ -780,6 +780,7 @@ def execTopLevel (fuel : Nat) (stmt : Stmt) (s : State) : State :=
     | .error .InvalidInstruction => default
     | .error .OutOfFuel => default
     | .error .StaticModeViolation => s -- Revert, note that we do not model charging gas in the Yul semantics
+    | .error .InvalidMemoryAccess => default
     | .error (.MissingContract _) => default
     | .error (.MissingContractFunction _) => default -- We do not model fallback functions
     | .error .InvalidExpression => default
