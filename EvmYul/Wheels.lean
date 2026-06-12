@@ -13,6 +13,40 @@ def UInt256.toByteArray (val : UInt256) : ByteArray :=
   let b := BE val.toNat
   ffi.ByteArray.zeroes ⟨32 - b.size⟩ ++ b
 
+@[simp] theorem UInt256.size_toByteArray (value : UInt256) :
+    value.toByteArray.size = 32 := by
+  have hLen :=
+    toBytesBigEndian_length_le_of_UInt256 value
+  unfold UInt256.toByteArray BE
+  simp only [Function.comp_apply, ByteArray.size_append,
+    ffi.ByteArray.size_zeroes, List.size_toByteArray]
+  change
+    ((32 : BitVec System.Platform.numBits) -
+        (toBytesBigEndian value.toNat).length).toNat +
+        (toBytesBigEndian value.toNat).length =
+      32
+  have hPow : 32 < 2 ^ System.Platform.numBits := by
+    rcases System.Platform.numBits_eq with h | h <;> simp [h]
+  have h32 :
+      (32 : BitVec System.Platform.numBits).toNat = 32 := by
+    rcases System.Platform.numBits_eq with h | h <;> simp [h]
+  have hValue :
+      ((toBytesBigEndian value.toNat).length :
+          BitVec System.Platform.numBits).toNat =
+        (toBytesBigEndian value.toNat).length := by
+    rcases System.Platform.numBits_eq with h | h
+    · rw [h, BitVec.natCast_eq_ofNat, BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt]
+      omega
+    · rw [h, BitVec.natCast_eq_ofNat, BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt]
+      omega
+  rw [BitVec.toNat_sub_of_le]
+  · rw [h32, hValue]
+    omega
+  · rw [BitVec.le_def, h32, hValue]
+    exact hLen
+
 abbrev Literal := UInt256
 
 -- 2^160 https://www.wolframalpha.com/input?i=2%5E160
