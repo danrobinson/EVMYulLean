@@ -47,6 +47,16 @@ def UInt256.toByteArray (val : UInt256) : ByteArray :=
   · rw [BitVec.le_def, h32, hValue]
     exact hLen
 
+@[simp] theorem UInt256.fromByteArrayBigEndian_toByteArray
+    (value : UInt256) :
+    EvmYul.fromByteArrayBigEndian value.toByteArray = value.toNat := by
+  unfold UInt256.toByteArray EvmYul.fromByteArrayBigEndian BE
+  rw [ffi.ByteArray.toList_eq_data_toList]
+  simp [ffi.ByteArray.zeroes]
+  exact
+    EvmYul.fromBytesBigEndian_zeroPad_toBytesBigEndian
+      value.toNat _
+
 abbrev Literal := UInt256
 
 -- 2^160 https://www.wolframalpha.com/input?i=2%5E160

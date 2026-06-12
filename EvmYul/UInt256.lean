@@ -357,6 +357,18 @@ private lemma fromBytes'_toBytes' {x : ℕ} : fromBytes' (toBytes' x) = x := by
     simp [UInt8.size, add_comm]
     apply Nat.div_add_mod
 
+theorem fromBytesBigEndian_zeroPad_toBytesBigEndian
+    (value padding : Nat) :
+    fromBytesBigEndian
+        (List.replicate padding 0 ++ toBytesBigEndian value) =
+      value := by
+  unfold fromBytesBigEndian toBytesBigEndian
+  simp only [Function.comp_apply]
+  rw [List.reverse_append, List.reverse_replicate,
+    List.reverse_reverse]
+  rw [extend_bytes_zero]
+  exact fromBytes'_toBytes'
+
 private lemma fromBytes'_cons_mod (b : UInt8) (bs : List UInt8) :
     fromBytes' (b :: bs) % UInt8.size = b.toFin.val := by
   unfold fromBytes'
@@ -456,6 +468,14 @@ theorem UInt256.toNat_ofNat_of_lt {n : Nat} (hLt : n < UInt256.size) :
   change (Fin.ofNat UInt256.size n).val = n
   rw [Fin.val_ofNat]
   exact Nat.mod_eq_of_lt hLt
+
+@[simp] theorem UInt256.ofNat_toNat (value : UInt256) :
+    UInt256.ofNat value.toNat = value := by
+  cases value with
+  | mk val =>
+      unfold UInt256.ofNat UInt256.toNat
+      simp
+      rfl
 
 theorem UInt256.toNat_ofNat_fromBytesBigEndian_of_length_le_32
     {bs : List UInt8} (hLen : bs.length ≤ 32) :
