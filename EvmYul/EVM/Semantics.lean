@@ -140,6 +140,14 @@ structure ChildFrameChainContext where
   totalGasUsedInBlock : ℕ
   transactionReceipts : Array TransactionReceipt
 
+/-- Exact child-frame state assembled by `Lambda` before invoking `Ξ`. -/
+structure LambdaChildContext where
+  address : AccountAddress
+  createdAccounts : Batteries.RBSet AccountAddress compare
+  accountMap : AccountMap .EVM
+  substate : Substate
+  executionEnv : ExecutionEnv .EVM
+
 mutual
 
 def call (fuel : Nat)
@@ -569,6 +577,62 @@ def Ξ -- Type `Ξ` using `\GX` or `\Xi`
           .ok (ExecutionResult.success (evmState'.createdAccounts, evmState'.accountMap, finalGas, evmState'.substate) o)
         | .revert g' o => .ok (ExecutionResult.revert g' o)
 
+/-- Address preimage used by CREATE and CREATE2 child initialization. -/
+def lambdaCreateAddressPreimage?
+    (sender : AccountAddress) (nonce : UInt256)
+    (salt : Option ByteArray) (initCode : ByteArray) : Option ByteArray :=
+  let sender := sender.toByteArray
+  let nonce := BE nonce.toNat
+  match salt with
+  | none => RLP <| .𝕃 [.𝔹 sender, .𝔹 nonce]
+  | some salt => .some <| BE 255 ++ sender ++ salt ++ ffi.KEC initCode
+
+/-- Build the CREATE/CREATE2 child context, including collision handling,
+endowment transfer, account initialization, and the fresh execution context. -/
+def lambdaChildContext?
+    (blobVersionedHashes : List ByteArray)
+    (createdAccounts : Batteries.RBSet AccountAddress compare)
+    (σ : AccountMap .EVM) (A : Substate)
+    (sender origin : AccountAddress) (gasPrice value : UInt256)
+    (initCode : ByteArray) (depth : UInt256) (salt : Option ByteArray)
+    (header : BlockHeader) (permission : Bool) : Option LambdaChildContext := do
+  let nonce : UInt256 := (σ.find? sender |>.option ⟨0⟩ (·.nonce)) - ⟨1⟩
+  let addressPreimage ←
+    lambdaCreateAddressPreimage? sender nonce salt initCode
+  let address : AccountAddress :=
+    (ffi.KEC addressPreimage).extract 12 32
+      |> fromByteArrayBigEndian |> Fin.ofNat _
+  let substate := A.addAccessedAccount address
+  let existentAccount := σ.findD address default
+  let (code, createdAccounts) :=
+    if existentAccount.nonce ≠ ⟨0⟩ || existentAccount.code.size ≠ 0 then
+      (⟨#[0xfe]⟩, createdAccounts)
+    else
+      (initCode, createdAccounts.insert address)
+  let newAccount : Account .EVM :=
+    { existentAccount with
+        nonce := existentAccount.nonce + ⟨1⟩
+        balance := value + existentAccount.balance }
+  let accountMap :=
+    match σ.find? sender with
+    | none => σ
+    | some account =>
+        σ.insert sender { account with balance := account.balance - value }
+          |>.insert address newAccount
+  let executionEnv : ExecutionEnv .EVM :=
+    { codeOwner := address
+      sender := origin
+      source := sender
+      weiValue := value
+      calldata := default
+      code := code
+      gasPrice := gasPrice.toNat
+      header := header
+      depth := depth.toNat
+      perm := permission
+      blobVersionedHashes := blobVersionedHashes }
+  pure { address, createdAccounts, accountMap, substate, executionEnv }
+
 def Lambda
   (fuel : ℕ)
   (blobVersionedHashes : List ByteArray)
@@ -607,71 +671,25 @@ def Lambda
   -- EIP-3860 (includes EIP-170)
   -- https://eips.ethereum.org/EIPS/eip-3860
 
-  let n : UInt256 := (σ.find? s |>.option ⟨0⟩ (·.nonce)) - ⟨1⟩
-  let lₐ ← L_A s n ζ i
-  let a : AccountAddress := -- (94) (95)
-    (ffi.KEC lₐ).extract 12 32 /- 160 bits = 20 bytes -/
-      |> fromByteArrayBigEndian |> Fin.ofNat _
-
-  -- A* (97)
-  let AStar := A.addAccessedAccount a
-  -- σ*
-  let existentAccount := σ.findD a default
-
-  /-
-    EIP-684 collision rule used through Cancun. EIP-7610 additionally checks
-    storage, but that rule belongs to the later Prague fork.
-  -/
   let originalCreatedAccounts := createdAccounts
-  let (i, createdAccounts) :=
-    if
-      existentAccount.nonce ≠ ⟨0⟩
-        || existentAccount.code.size ≠ 0
-    then
-      (⟨#[0xfe]⟩, createdAccounts)
-    else (i, createdAccounts.insert a)
-
-  let newAccount : Account .EVM :=
-    { existentAccount with
-        nonce := existentAccount.nonce + ⟨1⟩
-        balance := v + existentAccount.balance
-    }
-
-  -- If `v` ≠ 0 then the sender must have passed the `INSUFFICIENT_ACCOUNT_FUNDS` check
-  let σStar :=
-    match σ.find? s with
-      | none =>  σ
-      | some ac =>
-        σ.insert s {ac with balance := ac.balance - v}
-          |>.insert a newAccount -- (99)
-  -- I
-  let exEnv : ExecutionEnv .EVM :=
-    { codeOwner := a
-    , sender    := o
-    , source    := s
-    , weiValue  := v
-    , calldata := default
-    , code      := i
-    , gasPrice  := p.toNat
-    , header    := H
-    , depth     := e.toNat
-    , perm      := w
-    , blobVersionedHashes := blobVersionedHashes
-    }
-  match Ξ f createdAccounts genesisBlockHeader blocks σStar σ₀
-      chainContext g AStar exEnv with
+  let child ←
+    lambdaChildContext? blobVersionedHashes createdAccounts σ A s o p v i e ζ H w
+  match Ξ f child.createdAccounts genesisBlockHeader blocks child.accountMap σ₀
+      chainContext g child.substate child.executionEnv with
     | .error e =>
       if e == .OutOfFuel then throw .OutOfFuel
-      .ok (a, originalCreatedAccounts, σ, ⟨0⟩, AStar, false, .empty)
+      .ok (child.address, originalCreatedAccounts, σ, ⟨0⟩,
+        child.substate, false, .empty)
     | .ok (.revert g' o) =>
-      .ok (a, originalCreatedAccounts, σ, g', AStar, false, o)
+      .ok (child.address, originalCreatedAccounts, σ, g',
+        child.substate, false, o)
     | .ok (.success (createdAccounts', σStarStar, gStarStar, AStarStar) returnedData) =>
       -- The code-deposit cost (113)
       let c := GasConstants.Gcodedeposit * returnedData.size
 
       let F : Bool := Id.run do -- (118)
         let F₀ : Bool :=
-          match σ.find? a with
+          match σ.find? child.address with
           | .some ac => ac.code ≠ .empty ∨ ac.nonce ≠ ⟨0⟩
           | .none => false
         let F₂ : Bool := gStarStar.toNat < c
@@ -682,28 +700,20 @@ def Lambda
 
       let σ' : AccountMap .EVM := -- (115)
         if F then σ else
-          let newAccount' := σStarStar.findD a default
-          σStarStar.insert a {newAccount' with code := returnedData}
+          let newAccount' := σStarStar.findD child.address default
+          σStarStar.insert child.address {newAccount' with code := returnedData}
 
       -- (114)
       let g' := if F then 0 else gStarStar.toNat - c
 
       -- (116)
-      let A' := if F then AStar else AStarStar
+      let A' := if F then child.substate else AStarStar
       -- (117)
       let z := not F
       let createdAccountsFinal :=
         if F then originalCreatedAccounts else createdAccounts'
-      .ok (a, createdAccountsFinal, σ', .ofNat g', A', z, .empty) -- (93)
- where
-  L_A (s : AccountAddress) (n : UInt256) (ζ : Option ByteArray) (i : ByteArray) :
-    Option ByteArray
-  := -- (96)
-    let s := s.toByteArray
-    let n := BE n.toNat
-    match ζ with
-      | none   => RLP <| .𝕃 [.𝔹 s, .𝔹 n]
-      | some ζ => .some <| BE 255 ++ s ++ ζ ++ ffi.KEC i
+      .ok (child.address, createdAccountsFinal, σ', .ofNat g', A', z,
+        .empty) -- (93)
 
 /--
 Recipient-credit step of the message-call account-map prelude.
