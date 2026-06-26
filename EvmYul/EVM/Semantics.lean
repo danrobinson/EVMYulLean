@@ -156,6 +156,21 @@ abbrev LambdaXiState :=
   Batteries.RBSet AccountAddress compare × AccountMap .EVM ×
     UInt256 × Substate
 
+/-- London-through-Cancun CREATE code-deposit failure predicate. -/
+def lambdaDepositFails
+    (originalAccounts : AccountMap .EVM) (address : AccountAddress)
+    (remainingGas : UInt256) (returnedData : ByteArray) : Bool :=
+  let depositCost := GasConstants.Gcodedeposit * returnedData.size
+  let collision : Bool :=
+    match originalAccounts.find? address with
+    | .some account => account.code ≠ .empty ∨ account.nonce ≠ ⟨0⟩
+    | .none => false
+  let insufficientGas : Bool := remainingGas.toNat < depositCost
+  let codeTooLarge : Bool := returnedData.size > 24576
+  let invalidPrefix : Bool :=
+    ¬codeTooLarge && returnedData[0]? = some 0xef
+  collision ∨ insufficientGas ∨ codeTooLarge ∨ invalidPrefix
+
 /-- Finalize the exact result of a CREATE/CREATE2 initcode child. -/
 def finishLambdaChild
     (originalCreatedAccounts : Batteries.RBSet AccountAddress compare)
@@ -175,17 +190,9 @@ def finishLambdaChild
   | .ok (.success
       (createdAccounts, accountMap, remainingGas, substate) returnedData) =>
       let depositCost := GasConstants.Gcodedeposit * returnedData.size
-      let depositFails : Bool := Id.run do
-        let collision : Bool :=
-          match originalAccounts.find? child.address with
-          | .some account =>
-              account.code ≠ .empty ∨ account.nonce ≠ ⟨0⟩
-          | .none => false
-        let insufficientGas : Bool := remainingGas.toNat < depositCost
-        let codeTooLarge : Bool := returnedData.size > 24576
-        let invalidPrefix : Bool :=
-          ¬codeTooLarge && returnedData[0]? = some 0xef
-        pure (collision ∨ insufficientGas ∨ codeTooLarge ∨ invalidPrefix)
+      let depositFails :=
+        lambdaDepositFails originalAccounts child.address remainingGas
+          returnedData
       let finalAccounts : AccountMap .EVM :=
         if depositFails then originalAccounts else
           let newAccount := accountMap.findD child.address default
