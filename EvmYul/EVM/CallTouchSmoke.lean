@@ -11,6 +11,16 @@ def accounts : AccountMap .EVM :=
   (default : AccountMap .EVM).insert source
     { (default : Account .EVM) with balance := UInt256.ofNat 1 }
 
+example :
+    EVM.thetaCallTransfer accounts source recipient (UInt256.ofNat 0) =
+      accounts := by
+  rw [show UInt256.ofNat 0 = (⟨0⟩ : UInt256) by rfl]
+  exact EVM.thetaCallTransfer_zero accounts source recipient
+
+example :
+    EVM.thetaCallTransfer accounts source source (UInt256.ofNat 1) = accounts := by
+  simpa using EVM.thetaCallTransfer_self accounts source (UInt256.ofNat 1)
+
 def run (code : ByteArray) :
     Except EVM.ExecutionException
       (Batteries.RBSet AccountAddress compare × AccountMap .EVM × UInt256 ×

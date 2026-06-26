@@ -741,11 +741,18 @@ def thetaCallSourceDebit
 
 /--
 Full account-map prelude for an EVM message call.
+
+Zero-value transfers and transfers to the source itself leave the account map
+unchanged. EIP-161 touching is handled separately by `Θ`, so these fast paths
+do not suppress the required touched-account effects.
 -/
 def thetaCallTransfer
     (σ : AccountMap .EVM) (s r : AccountAddress) (v : UInt256) :
     AccountMap .EVM :=
-  thetaCallSourceDebit (thetaCallRecipientCredit σ r v) s v
+  if v == ⟨0⟩ || s == r then
+    σ
+  else
+    thetaCallSourceDebit (thetaCallRecipientCredit σ r v) s v
 
 /--
 Execution environment installed for a `Θ` child frame.
@@ -859,6 +866,17 @@ def Θ (fuel : Nat)
   .ok (createdAccounts, σ', g', A', z, out)
 
 end
+
+@[simp] theorem thetaCallTransfer_zero
+    (σ : AccountMap .EVM) (s r : AccountAddress) :
+    thetaCallTransfer σ s r ⟨0⟩ = σ := by
+  have hZero : ((⟨0⟩ : UInt256) == ⟨0⟩) = true := by decide
+  simp [thetaCallTransfer, hZero]
+
+@[simp] theorem thetaCallTransfer_self
+    (σ : AccountMap .EVM) (s : AccountAddress) (v : UInt256) :
+    thetaCallTransfer σ s s v = σ := by
+  simp [thetaCallTransfer]
 
 open Batteries (RBMap RBSet)
 
