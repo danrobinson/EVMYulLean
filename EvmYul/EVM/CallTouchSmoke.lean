@@ -21,6 +21,21 @@ example :
     EVM.thetaCallTransfer accounts source source (UInt256.ofNat 1) = accounts := by
   simpa using EVM.thetaCallTransfer_self accounts source (UInt256.ofNat 1)
 
+example : EVM.thetaCallFinalAccounts true accounts ∅ = ∅ := by
+  rfl
+
+example (child : AccountMap .EVM) :
+    EVM.thetaCallFinalAccounts false accounts child = accounts := by
+  rfl
+
+example (parent child : Substate) :
+    EVM.thetaCallFinalSubstate true parent child = child := by
+  rfl
+
+example (parent child : Substate) :
+    EVM.thetaCallFinalSubstate false parent child = parent := by
+  rfl
+
 def childCode : ByteArray := ⟨#[0x60, 0x00, 0x00]⟩
 
 example :

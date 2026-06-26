@@ -787,6 +787,18 @@ def thetaCallExecutionEnv
     blobVersionedHashes := blobVersionedHashes
   }
 
+/-- Commit child account state exactly on message-call success. An empty child
+map is valid state, not a failure sentinel; `z` is the Yellow Paper success
+condition. -/
+def thetaCallFinalAccounts
+    (z : Bool) (parent child : AccountMap .EVM) : AccountMap .EVM :=
+  if z then child else parent
+
+/-- Commit child accrued substate exactly on message-call success. -/
+def thetaCallFinalSubstate
+    (z : Bool) (parent child : Substate) : Substate :=
+  if z then child else parent
+
 /--
 Message cal
 `σ`  - evm state
@@ -861,10 +873,10 @@ def Θ (fuel : Nat)
             pure (a, true, b, c, d, o)
 
   -- Equation (127)
-  let σ' := if σ''.isEmpty then σ else σ''
+  let σ' := thetaCallFinalAccounts z σ σ''
 
   -- Equation (129)
-  let A' := if σ''.isEmpty then A else A''
+  let A' := thetaCallFinalSubstate z A A''
 
   -- Equation (119)
   .ok (createdAccounts, σ', g', A', z, out)
