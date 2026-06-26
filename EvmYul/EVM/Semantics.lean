@@ -148,6 +148,56 @@ structure LambdaChildContext where
   substate : Substate
   executionEnv : ExecutionEnv .EVM
 
+abbrev LambdaResult :=
+  AccountAddress × Batteries.RBSet AccountAddress compare ×
+    AccountMap .EVM × UInt256 × Substate × Bool × ByteArray
+
+abbrev LambdaXiState :=
+  Batteries.RBSet AccountAddress compare × AccountMap .EVM ×
+    UInt256 × Substate
+
+/-- Finalize the exact result of a CREATE/CREATE2 initcode child. -/
+def finishLambdaChild
+    (originalCreatedAccounts : Batteries.RBSet AccountAddress compare)
+    (originalAccounts : AccountMap .EVM) (child : LambdaChildContext)
+    (run : Except EVM.ExecutionException (ExecutionResult LambdaXiState)) :
+    Except EVM.ExecutionException LambdaResult :=
+  match run with
+  | .error error =>
+      if error == .OutOfFuel then
+        .error .OutOfFuel
+      else
+        .ok (child.address, originalCreatedAccounts, originalAccounts, ⟨0⟩,
+          child.substate, false, .empty)
+  | .ok (.revert returnedGas output) =>
+      .ok (child.address, originalCreatedAccounts, originalAccounts,
+        returnedGas, child.substate, false, output)
+  | .ok (.success
+      (createdAccounts, accountMap, remainingGas, substate) returnedData) =>
+      let depositCost := GasConstants.Gcodedeposit * returnedData.size
+      let depositFails : Bool := Id.run do
+        let collision : Bool :=
+          match originalAccounts.find? child.address with
+          | .some account =>
+              account.code ≠ .empty ∨ account.nonce ≠ ⟨0⟩
+          | .none => false
+        let insufficientGas : Bool := remainingGas.toNat < depositCost
+        let codeTooLarge : Bool := returnedData.size > 24576
+        let invalidPrefix : Bool :=
+          ¬codeTooLarge && returnedData[0]? = some 0xef
+        pure (collision ∨ insufficientGas ∨ codeTooLarge ∨ invalidPrefix)
+      let finalAccounts : AccountMap .EVM :=
+        if depositFails then originalAccounts else
+          let newAccount := accountMap.findD child.address default
+          accountMap.insert child.address { newAccount with code := returnedData }
+      let finalGas :=
+        if depositFails then 0 else remainingGas.toNat - depositCost
+      let finalSubstate := if depositFails then child.substate else substate
+      let finalCreatedAccounts :=
+        if depositFails then originalCreatedAccounts else createdAccounts
+      .ok (child.address, finalCreatedAccounts, finalAccounts, .ofNat finalGas,
+        finalSubstate, !depositFails, .empty)
+
 mutual
 
 def call (fuel : Nat)
@@ -674,46 +724,9 @@ def Lambda
   let originalCreatedAccounts := createdAccounts
   let child ←
     lambdaChildContext? blobVersionedHashes createdAccounts σ A s o p v i e ζ H w
-  match Ξ f child.createdAccounts genesisBlockHeader blocks child.accountMap σ₀
-      chainContext g child.substate child.executionEnv with
-    | .error e =>
-      if e == .OutOfFuel then throw .OutOfFuel
-      .ok (child.address, originalCreatedAccounts, σ, ⟨0⟩,
-        child.substate, false, .empty)
-    | .ok (.revert g' o) =>
-      .ok (child.address, originalCreatedAccounts, σ, g',
-        child.substate, false, o)
-    | .ok (.success (createdAccounts', σStarStar, gStarStar, AStarStar) returnedData) =>
-      -- The code-deposit cost (113)
-      let c := GasConstants.Gcodedeposit * returnedData.size
-
-      let F : Bool := Id.run do -- (118)
-        let F₀ : Bool :=
-          match σ.find? child.address with
-          | .some ac => ac.code ≠ .empty ∨ ac.nonce ≠ ⟨0⟩
-          | .none => false
-        let F₂ : Bool := gStarStar.toNat < c
-        let MAX_CODE_SIZE := 24576
-        let F₃ : Bool := returnedData.size > MAX_CODE_SIZE
-        let F₄ : Bool := ¬F₃ && returnedData[0]? = some 0xef
-        pure (F₀ ∨ F₂ ∨ F₃ ∨ F₄)
-
-      let σ' : AccountMap .EVM := -- (115)
-        if F then σ else
-          let newAccount' := σStarStar.findD child.address default
-          σStarStar.insert child.address {newAccount' with code := returnedData}
-
-      -- (114)
-      let g' := if F then 0 else gStarStar.toNat - c
-
-      -- (116)
-      let A' := if F then child.substate else AStarStar
-      -- (117)
-      let z := not F
-      let createdAccountsFinal :=
-        if F then originalCreatedAccounts else createdAccounts'
-      .ok (child.address, createdAccountsFinal, σ', .ofNat g', A', z,
-        .empty) -- (93)
+  finishLambdaChild originalCreatedAccounts σ child
+    (Ξ f child.createdAccounts genesisBlockHeader blocks child.accountMap σ₀
+      chainContext g child.substate child.executionEnv)
 
 /--
 Recipient-credit step of the message-call account-map prelude.
