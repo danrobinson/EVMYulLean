@@ -646,6 +646,21 @@ def lambdaCreateAddressPreimage?
   | none => RLP <| .𝕃 [.𝔹 sender, .𝔹 nonce]
   | some salt => .some <| BE 255 ++ sender ++ salt ++ ffi.KEC initCode
 
+/-- Account-map initialization performed before CREATE/CREATE2 initcode. -/
+def lambdaChildAccountMap
+    (accounts : AccountMap .EVM) (sender address : AccountAddress)
+    (value : UInt256) : AccountMap .EVM :=
+  let existentAccount := accounts.findD address default
+  let newAccount : Account .EVM :=
+    { existentAccount with
+        nonce := existentAccount.nonce + ⟨1⟩
+        balance := value + existentAccount.balance }
+  match accounts.find? sender with
+  | none => accounts
+  | some account =>
+      accounts.insert sender { account with balance := account.balance - value }
+        |>.insert address newAccount
+
 /-- Build the CREATE/CREATE2 child context, including collision handling,
 endowment transfer, account initialization, and the fresh execution context. -/
 def lambdaChildContext?
@@ -672,16 +687,7 @@ def lambdaChildContext?
       (⟨#[0xfe]⟩, createdAccounts)
     else
       (initCode, createdAccounts.insert address)
-  let newAccount : Account .EVM :=
-    { existentAccount with
-        nonce := existentAccount.nonce + ⟨1⟩
-        balance := value + existentAccount.balance }
-  let accountMap :=
-    match σ.find? sender with
-    | none => σ
-    | some account =>
-        σ.insert sender { account with balance := account.balance - value }
-          |>.insert address newAccount
+  let accountMap := lambdaChildAccountMap σ sender address value
   let executionEnv : ExecutionEnv .EVM :=
     { codeOwner := address
       sender := origin
