@@ -823,6 +823,10 @@ def Θ (fuel : Nat)
     | 0 => .error .OutOfFuel
     | fuel + 1 => do
 
+  -- EIP-161: successful message calls touch both value-transfer participants.
+  -- Keep the original `A` below so REVERT/exception restores this effect.
+  let A₁ := A.addTouchedAccount s |>.addTouchedAccount r
+
   -- (124) (125) (126)
   let σ₁ := thetaCallTransfer σ s r v
 
@@ -833,10 +837,10 @@ def Θ (fuel : Nat)
   let (createdAccounts, z, σ'', g', A'', out) ←
     match c with
       | ToExecute.Precompiled p =>
-        .ok <| (createdAccounts, runPrecompiledContract p σ₁ g A I)
+        .ok <| (createdAccounts, runPrecompiledContract p σ₁ g A₁ I)
       | ToExecute.Code _ =>
         match Ξ fuel createdAccounts genesisBlockHeader blocks σ₁ σ₀
-            chainContext g A I with
+            chainContext g A₁ I with
           | .error e =>
             if e == .OutOfFuel then throw .OutOfFuel
             pure (createdAccounts, false, σ, ⟨0⟩, A, .empty)
