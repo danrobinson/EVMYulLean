@@ -716,17 +716,18 @@ def Lambda
 :=
   match fuel with
     | 0 => .error .OutOfFuel
-    | .succ f => do
-
-  -- EIP-3860 (includes EIP-170)
-  -- https://eips.ethereum.org/EIPS/eip-3860
-
-  let originalCreatedAccounts := createdAccounts
-  let child ←
-    lambdaChildContext? blobVersionedHashes createdAccounts σ A s o p v i e ζ H w
-  finishLambdaChild originalCreatedAccounts σ child
-    (Ξ f child.createdAccounts genesisBlockHeader blocks child.accountMap σ₀
-      chainContext g child.substate child.executionEnv)
+    | .succ f =>
+      -- EIP-3860 (includes EIP-170)
+      -- https://eips.ethereum.org/EIPS/eip-3860
+      let originalCreatedAccounts := createdAccounts
+      match
+          lambdaChildContext? blobVersionedHashes createdAccounts σ A s o p v i e ζ H w
+      with
+      | none => .error .StackUnderflow
+      | some child =>
+          finishLambdaChild originalCreatedAccounts σ child
+            (Ξ f child.createdAccounts genesisBlockHeader blocks child.accountMap σ₀
+              chainContext g child.substate child.executionEnv)
 
 /--
 Recipient-credit step of the message-call account-map prelude.
