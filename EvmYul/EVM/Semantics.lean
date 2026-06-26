@@ -145,6 +145,7 @@ structure LambdaChildContext where
   address : AccountAddress
   createdAccounts : Batteries.RBSet AccountAddress compare
   accountMap : AccountMap .EVM
+  rollbackSubstate : Substate
   substate : Substate
   executionEnv : ExecutionEnv .EVM
 
@@ -183,10 +184,10 @@ def finishLambdaChild
         .error .OutOfFuel
       else
         .ok (child.address, originalCreatedAccounts, originalAccounts, ⟨0⟩,
-          child.substate, false, .empty)
+          child.rollbackSubstate, false, .empty)
   | .ok (.revert returnedGas output) =>
       .ok (child.address, originalCreatedAccounts, originalAccounts,
-        returnedGas, child.substate, false, output)
+        returnedGas, child.rollbackSubstate, false, output)
   | .ok (.success
       (createdAccounts, accountMap, remainingGas, substate) returnedData) =>
       let depositCost := GasConstants.Gcodedeposit * returnedData.size
@@ -199,7 +200,8 @@ def finishLambdaChild
           accountMap.insert child.address { newAccount with code := returnedData }
       let finalGas :=
         if depositFails then 0 else remainingGas.toNat - depositCost
-      let finalSubstate := if depositFails then child.substate else substate
+      let finalSubstate :=
+        if depositFails then child.rollbackSubstate else substate
       let finalCreatedAccounts :=
         if depositFails then originalCreatedAccounts else createdAccounts
       .ok (child.address, finalCreatedAccounts, finalAccounts, .ofNat finalGas,
@@ -659,7 +661,11 @@ def lambdaChildContext?
   let address : AccountAddress :=
     (ffi.KEC addressPreimage).extract 12 32
       |> fromByteArrayBigEndian |> Fin.ofNat _
-  let substate := A.addAccessedAccount address
+  let rollbackSubstate := A.addAccessedAccount address
+  let substate :=
+    rollbackSubstate
+      |>.addTouchedAccount sender
+      |>.addTouchedAccount address
   let existentAccount := σ.findD address default
   let (code, createdAccounts) :=
     if existentAccount.nonce ≠ ⟨0⟩ || existentAccount.code.size ≠ 0 then
@@ -688,7 +694,9 @@ def lambdaChildContext?
       depth := depth.toNat
       perm := permission
       blobVersionedHashes := blobVersionedHashes }
-  pure { address, createdAccounts, accountMap, substate, executionEnv }
+  pure
+    { address, createdAccounts, accountMap, rollbackSubstate, substate,
+      executionEnv }
 
 def Lambda
   (fuel : ℕ)
