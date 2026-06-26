@@ -619,18 +619,14 @@ def Lambda
   let existentAccount := σ.findD a default
 
   /-
-    https://eips.ethereum.org/EIPS/eip-7610
-    If a contract creation is attempted due to a creation transaction,
-    the CREATE opcode, the CREATE2 opcode, or any other reason,
-    and the destination address already has either a nonzero nonce,
-    a nonzero code length, or non-empty storage, then the creation MUST throw
-    as if the first byte in the init code were an invalid opcode.
+    EIP-684 collision rule used through Cancun. EIP-7610 additionally checks
+    storage, but that rule belongs to the later Prague fork.
   -/
+  let originalCreatedAccounts := createdAccounts
   let (i, createdAccounts) :=
     if
       existentAccount.nonce ≠ ⟨0⟩
         || existentAccount.code.size ≠ 0
-        || existentAccount.storage != default
     then
       (⟨#[0xfe]⟩, createdAccounts)
     else (i, createdAccounts.insert a)
@@ -666,9 +662,9 @@ def Lambda
       chainContext g AStar exEnv with
     | .error e =>
       if e == .OutOfFuel then throw .OutOfFuel
-      .ok (a, createdAccounts, σ, ⟨0⟩, AStar, false, .empty)
+      .ok (a, originalCreatedAccounts, σ, ⟨0⟩, AStar, false, .empty)
     | .ok (.revert g' o) =>
-      .ok (a, createdAccounts, σ, g', AStar, false, o)
+      .ok (a, originalCreatedAccounts, σ, g', AStar, false, o)
     | .ok (.success (createdAccounts', σStarStar, gStarStar, AStarStar) returnedData) =>
       -- The code-deposit cost (113)
       let c := GasConstants.Gcodedeposit * returnedData.size
@@ -696,7 +692,9 @@ def Lambda
       let A' := if F then AStar else AStarStar
       -- (117)
       let z := not F
-      .ok (a, createdAccounts', σ', .ofNat g', A', z, .empty) -- (93)
+      let createdAccountsFinal :=
+        if F then originalCreatedAccounts else createdAccounts'
+      .ok (a, createdAccountsFinal, σ', .ofNat g', A', z, .empty) -- (93)
  where
   L_A (s : AccountAddress) (n : UInt256) (ζ : Option ByteArray) (i : ByteArray) :
     Option ByteArray
