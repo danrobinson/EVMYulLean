@@ -700,6 +700,7 @@ def lambdaChildContext?
       weiValue := value
       calldata := default
       code := code
+      codeBytes := code
       gasPrice := gasPrice.toNat
       header := header
       depth := depth.toNat
