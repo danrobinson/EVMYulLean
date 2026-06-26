@@ -655,11 +655,16 @@ def lambdaChildAccountMap
     { existentAccount with
         nonce := existentAccount.nonce + ⟨1⟩
         balance := value + existentAccount.balance }
-  match accounts.find? sender with
-  | none => accounts
-  | some account =>
-      accounts.insert sender { account with balance := account.balance - value }
-        |>.insert address newAccount
+  let accounts :=
+    if value == ⟨0⟩ || sender == address then
+      accounts
+    else
+      match accounts.find? sender with
+      | none => accounts
+      | some account =>
+          accounts.insert sender
+            { account with balance := account.balance - value }
+  accounts.insert address newAccount
 
 /-- Build the CREATE/CREATE2 child context, including collision handling,
 endowment transfer, account initialization, and the fresh execution context. -/
