@@ -779,6 +779,10 @@ def thetaCallExecutionEnv
       match c with
         | ToExecute.Precompiled _ => default
         | ToExecute.Code code => code
+    codeBytes :=
+      match c with
+        | ToExecute.Precompiled _ => default
+        | ToExecute.Code code => code
     header    := H
     blobVersionedHashes := blobVersionedHashes
   }

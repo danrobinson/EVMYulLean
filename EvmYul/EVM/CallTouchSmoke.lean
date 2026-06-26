@@ -21,6 +21,13 @@ example :
     EVM.thetaCallTransfer accounts source source (UInt256.ofNat 1) = accounts := by
   simpa using EVM.thetaCallTransfer_self accounts source (UInt256.ofNat 1)
 
+def childCode : ByteArray := ⟨#[0x60, 0x00, 0x00]⟩
+
+example :
+    (EVM.thetaCallExecutionEnv [] source source recipient (.Code childCode)
+      (UInt256.ofNat 0) (UInt256.ofNat 0) default 1 default true).codeBytes =
+      childCode := rfl
+
 def run (code : ByteArray) :
     Except EVM.ExecutionException
       (Batteries.RBSet AccountAddress compare × AccountMap .EVM × UInt256 ×
