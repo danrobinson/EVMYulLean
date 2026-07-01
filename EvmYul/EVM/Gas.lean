@@ -52,7 +52,7 @@ def Wverylow : List (Operation .EVM) := [
     ]
 
 def Wlow : List (Operation .EVM) := [
-  .MUL, .DIV, .SDIV, .MOD, .SMOD, .SIGNEXTEND, .SELFBALANCE
+  .MUL, .DIV, .SDIV, .MOD, .SMOD, .SIGNEXTEND, .CLZ, .SELFBALANCE
 ]
 
 def Wmid : List (Operation .EVM) := [
@@ -168,9 +168,25 @@ def Cnew {τ : OperationType} (t : AccountAddress) (val : UInt256)
 def Cxfer (val : UInt256) : ℕ :=
   if val != ⟨0⟩ then Gcallvalue else 0
 
+def addDelegatedCodeAccess
+    (t : AccountAddress) (σ : AccountMap .EVM) (A : Substate) : Substate :=
+  match σ.delegatedCodeTarget? t with
+  | none => A
+  | some target => A.addAccessedAccount target
+
+def CdelegatedCodeAccess
+    (t : AccountAddress) (σ : AccountMap .EVM) (A : Substate) : ℕ :=
+  match σ.delegatedCodeTarget? t with
+  | none => 0
+  | some target => Caccess target (A.addAccessedAccount t)
+
 def Cextra {τ : OperationType} (t r : AccountAddress) (val : UInt256)
     (σ : AccountMap τ) (A : Substate) : ℕ :=
-  Caccess t A + Cxfer val + Cnew r val σ
+  let delegatedAccess :=
+    match τ with
+    | .EVM => CdelegatedCodeAccess t σ A
+    | .Yul => 0
+  Caccess t A + delegatedAccess + Cxfer val + Cnew r val σ
 
 def Cgascap {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
     (σ : AccountMap τ) (μ : MachineState) (A : Substate) :=

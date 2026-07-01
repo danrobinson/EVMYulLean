@@ -28,6 +28,7 @@ import EvmYul.EVM.Semantics
 import EvmYul.EVM.State
 import EvmYul.EVM.StateOps
 import EvmYul.EVM.PrecompiledContracts
+import EvmYul.EVM.PostFusakaTests
 import EvmYul.EVM.Gas
 import EvmYul.EVM.GasConstants
 

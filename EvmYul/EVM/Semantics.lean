@@ -165,6 +165,7 @@ def call (fuel : Nat)
       -- m[μs[3] . . . (μs[3] + μs[4] − 1)]
       let i := evmState.memory.readWithPadding inOffset.toNat inSize.toNat
       let A' := evmState.addAccessedAccount t |>.substate
+      let A' := addDelegatedCodeAccess t σ A'
       let (cA, σ', g', A', z, o) ← do
         if value ≤ (σ.find? Iₐ |>.option ⟨0⟩ (·.balance)) ∧ Iₑ < 1024 then
           let resultOfΘ ←
@@ -915,6 +916,10 @@ def Υ (fuel : ℕ)
       | none => a
   let AStar := -- (77)
     { A0 with accessedAccounts := AStarₐ, accessedStorageKeys := Batteries.RBSet.ofList AStar_K Substate.storageKeysCmp}
+  let AStar :=
+    match T.base.recipient with
+      | some t => addDelegatedCodeAccess t σ₀ AStar
+      | none => AStar
   let createdAccounts : Batteries.RBSet AccountAddress compare := .empty
   let (/- provisional state -/ σ_P, g', A, z) ← -- (76)
     match T.base.recipient with

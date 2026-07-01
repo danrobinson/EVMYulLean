@@ -112,4 +112,16 @@ def PersistentAccountState.codeHash (self : PersistentAccountState .EVM) : UInt2
 def Account.codeHash (self : (Account .EVM)) : UInt256 :=
   self.toPersistentAccountState.codeHash
 
+def eip7702DelegationTargetOfCode? (code : ByteArray) : Option AccountAddress :=
+  if code.size == 23
+      && code.get? 0 == some 0xef
+      && code.get? 1 == some 0x01
+      && code.get? 2 == some 0x00 then
+    some <| .ofNat <| fromByteArrayBigEndian (code.readWithoutPadding 3 20)
+  else
+    none
+
+def Account.eip7702DelegationTarget? (self : Account .EVM) : Option AccountAddress :=
+  eip7702DelegationTargetOfCode? self.code
+
 end EvmYul

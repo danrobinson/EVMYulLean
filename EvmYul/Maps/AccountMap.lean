@@ -64,15 +64,37 @@ def AccountMap.transferBalance (τ : OperationType) (σ : AccountMap τ) (from_a
     | .none => .none
     | .some σ' => σ'.increaseBalance τ to_addr amount
 
+def AccountMap.delegatedCodeTarget? (σ : AccountMap .EVM) (t : AccountAddress) :
+    Option AccountAddress :=
+  match PrecompiledContract.ofAddress? t with
+  | some _ => none
+  | none =>
+      match σ.find? t with
+      | none => none
+      | some account => account.eip7702DelegationTarget?
+
+def AccountMap.delegatedToExecute (σ : AccountMap .EVM) (t : AccountAddress) :
+    ToExecute .EVM :=
+  match σ.delegatedCodeTarget? t with
+  | none =>
+      match σ.find? t with
+      | none => ToExecute.Code default
+      | some account => ToExecute.Code account.code
+  | some target =>
+      if (PrecompiledContract.ofAddress? target).isSome then
+        ToExecute.Code default
+      else
+        match σ.find? target with
+        | none => ToExecute.Code default
+        | some account => ToExecute.Code account.code
+
 def toExecute (τ : OperationType) (σ : AccountMap τ) (t : AccountAddress) : ToExecute τ :=
   match PrecompiledContract.ofAddress? t with
   | some precompiled => ToExecute.Precompiled precompiled
   | none => Id.run do
       match τ with
         | .EVM =>
-          -- We use the code directly without an indirection a'la `codeMap[t]`.
-          let .some tDirect := σ.find? t | ToExecute.Code default
-          ToExecute.Code tDirect.code
+          AccountMap.delegatedToExecute σ t
         | .Yul =>
           let .some tDirect := σ.find? t | ToExecute.Code default
           ToExecute.Code tDirect.code

@@ -254,6 +254,12 @@ def eq (a b : UInt256) := fromBool (a = b)
 def isZero (a : UInt256) :=
   fromBool (eq0 a)
 
+def clz (a : UInt256) : UInt256 :=
+  if a == ⟨0⟩ then
+    ⟨256⟩
+  else
+    .ofNat (255 - (UInt256.log2 a).toNat)
+
 end UInt256
 
 -- | Convert from a list of little-endian bytes to a natural number.
