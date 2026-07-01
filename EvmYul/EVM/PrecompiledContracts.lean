@@ -139,6 +139,16 @@ def expModAux (m : ℕ) (a : ℕ) (c : ℕ) : ℕ → ℕ
 
 def expMod (m : ℕ) (b : UInt256) (n : ℕ) : ℕ := expModAux m 1 b.toNat n
 
+def Ξ_EXPMOD_lengthLimit : ℕ := 1024
+
+def Ξ_EXPMOD_lengthsWithinLimit (data : ByteArray) : Bool :=
+  let base_length := nat_of_slice data 0 32
+  let exp_length := nat_of_slice data 32 32
+  let modulus_length := nat_of_slice data 64 32
+  base_length ≤ Ξ_EXPMOD_lengthLimit
+    && exp_length ≤ Ξ_EXPMOD_lengthLimit
+    && modulus_length ≤ Ξ_EXPMOD_lengthLimit
+
 def Ξ_EXPMOD_gasCost (data : ByteArray) : ℕ :=
   let base_length := nat_of_slice data 0 32
   let exp_length := nat_of_slice data 32 32
@@ -147,7 +157,10 @@ def Ξ_EXPMOD_gasCost (data : ByteArray) : ℕ :=
   -- We don't want to call `nat_of_slice` unless we need it
   let exp := λ () ↦ nat_of_slice data (96 + base_length) exp_length
 
-  let multiplication_complexity x y := ((max x y + 7) / 8) ^ 2
+  let multiplication_complexity x y :=
+    let max_length := max x y
+    let words := (max_length + 7) / 8
+    if max_length > 32 then 2 * words ^ 2 else 16
   let adjusted_exp_length :=
     if exp_length ≤ 32 && exp () == 0 then
       0
@@ -155,7 +168,7 @@ def Ξ_EXPMOD_gasCost (data : ByteArray) : ℕ :=
       if exp_length ≤ 32 then
         Nat.log 2 (exp ())
       else
-        let length_part := 8 * (exp_length - 32)
+        let length_part := 16 * (exp_length - 32)
         let bits_part :=
           let exp_head := nat_of_slice data (96 + base_length) 32
           if 32 < exp_length ∧ exp_head != 0 then
@@ -164,8 +177,7 @@ def Ξ_EXPMOD_gasCost (data : ByteArray) : ℕ :=
             0
         length_part + bits_part
   let iterations := max adjusted_exp_length 1
-  let G_quaddivisor := 3
-  max 200 (multiplication_complexity base_length modulus_length * iterations / G_quaddivisor)
+  max 500 (multiplication_complexity base_length modulus_length * iterations)
 
 def Ξ_EXPMOD_output (data : ByteArray) : ByteArray :=
   let base_length := nat_of_slice data 0 32
@@ -195,7 +207,9 @@ def Ξ_EXPMOD {τ : OperationType}
 :=
   let data := I.calldata
   let gᵣ := Ξ_EXPMOD_gasCost data
-  if g.toNat < gᵣ then
+  if !Ξ_EXPMOD_lengthsWithinLimit data then
+    (false, ∅, ⟨0⟩, A, .empty)
+  else if g.toNat < gᵣ then
     (false, ∅, ⟨0⟩, A, .empty)
   else
     (true, σ, g - .ofNat gᵣ, A, Ξ_EXPMOD_output data)
