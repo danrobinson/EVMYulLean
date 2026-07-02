@@ -253,7 +253,9 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
             let callGas : UInt256 :=
               .ofNat <|
-                EvmYul.EVM.Ccallgas address address value gas
+                EvmYul.EVM.CcallgasWithProtocolFor
+                  s₀.executionEnv.protocol s₀.toSharedState
+                  address address value gas
                   s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
             let accountMap₁Opt :=
               callTransferAccountMap?
@@ -334,7 +336,9 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
             let callGas : UInt256 :=
               .ofNat <|
-                EvmYul.EVM.Ccallgas address address ⟨0⟩ gas
+                EvmYul.EVM.CcallgasWithProtocolFor
+                  s₀.executionEnv.protocol s₀.toSharedState
+                  address address ⟨0⟩ gas
                   s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
           
               if s₀.executionEnv.depth ≥ 1024
@@ -403,7 +407,9 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
             let callGas : UInt256 :=
               .ofNat <|
-                EvmYul.EVM.Ccallgas address s₀.executionEnv.codeOwner value gas
+                EvmYul.EVM.CcallgasWithProtocolFor
+                  s₀.executionEnv.protocol s₀.toSharedState
+                  address s₀.executionEnv.codeOwner value gas
                   s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
             let accountMap₁Opt :=
               callTransferAccountMap?
@@ -484,7 +490,9 @@ def primCall (fuel : ℕ) (s₀ : State) (prim : Operation .Yul) (args : List Li
             let calldata₁ := s₀.toMachineState.memory.readWithPadding inOffset.toNat inSize.toNat
             let callGas : UInt256 :=
               .ofNat <|
-                EvmYul.EVM.Ccallgas address s₀.executionEnv.codeOwner ⟨0⟩ gas
+                EvmYul.EVM.CcallgasWithProtocolFor
+                  s₀.executionEnv.protocol s₀.toSharedState
+                  address s₀.executionEnv.codeOwner ⟨0⟩ gas
                   s₀.sharedState.accountMap s₀.toMachineState s₀.toState.substate
             if s₀.executionEnv.depth ≥ 1024
             then

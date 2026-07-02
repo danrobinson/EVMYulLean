@@ -162,7 +162,7 @@ def call (fuel : Nat)
       let Iₑ := evmState.executionEnv.depth
       let protocol := evmState.executionEnv.protocol
       let callgas :=
-        CcallgasWithProtocol protocol t recipient value gas σ
+        CcallgasWithProtocolFor protocol evmState t recipient value gas σ
           evmState.toMachineState evmState.substate
       let evmState := {evmState with gasAvailable := evmState.gasAvailable - UInt256.ofNat gasCost}
       -- m[μs[3] . . . (μs[3] + μs[4] − 1)]
@@ -459,7 +459,7 @@ def X (fuel : ℕ) (validJumps : Array UInt256) (evmState : State)
           .error .OutOfGass
         let gasAvailable := evmState.gasAvailable - .ofNat cost₁
         let evmState := { evmState with gasAvailable := gasAvailable}
-        let cost₂ := C' evmState w
+        let cost₂ := selectedC' evmState w
 
         if evmState.gasAvailable.toNat < cost₂ then
           .error .OutOfGass
@@ -680,7 +680,7 @@ def Lambda
       .ok (a, createdAccounts, σ, g', AStar, false, o)
     | .ok (.success (createdAccounts', σStarStar, gStarStar, AStarStar) returnedData) =>
       -- The code-deposit cost (113)
-      let c := protocol.codeDepositGasPerByte * returnedData.size
+      let c := protocol.codeDepositGasPerByteFor exEnv * returnedData.size
 
       let F : Bool := Id.run do -- (118)
         let F₀ : Bool :=
@@ -883,7 +883,7 @@ def Υ (fuel : ℕ)
   (protocol : Protocol := Protocol.osaka)
   : Except EVM.Exception (AccountMap .EVM × Substate × Bool × UInt256)
 := do
-  let g₀ : ℕ := EVM.intrinsicGasWithProtocol protocol T
+  let g₀ : ℕ := EVM.intrinsicGasWithProtocolFor protocol T T
   -- "here can be no invalid transactions from this point"
   let senderAccount := (σ.find? S_T).get!
   -- The priority fee (67)
