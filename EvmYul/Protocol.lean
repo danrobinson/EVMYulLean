@@ -27,6 +27,59 @@ inductive Protocol where
   | tempo (fork : TempoFork)
   deriving BEq, DecidableEq, Repr
 
+structure GasSchedule where
+  sstoreSetGas : Nat
+  callValueTransferGas : Nat
+  callNewAccountGas : Nat
+  firstNonceAccountCreationGas : Nat
+  createBaseGas : Nat
+  codeDepositGasPerByte : Nat
+  txCreateGas : Nat
+  initCodeWordGas : Nat
+  eip7702AuthorizationBaseGas : Nat
+  deriving BEq, DecidableEq, Repr
+
+namespace GasSchedule
+
+def osaka : GasSchedule :=
+  { sstoreSetGas := 20000
+    callValueTransferGas := 9000
+    callNewAccountGas := 25000
+    firstNonceAccountCreationGas := 0
+    createBaseGas := 32000
+    codeDepositGasPerByte := 200
+    txCreateGas := 32000
+    initCodeWordGas := 2
+    eip7702AuthorizationBaseGas := 25000 }
+
+def tempo : GasSchedule :=
+  { sstoreSetGas := 250000
+    callValueTransferGas := 0
+    callNewAccountGas := 0
+    firstNonceAccountCreationGas := 250000
+    createBaseGas := 500000
+    codeDepositGasPerByte := 1000
+    txCreateGas := 500000
+    initCodeWordGas := 0
+    eip7702AuthorizationBaseGas := 12500 }
+
+def tempoLatest : GasSchedule :=
+  tempo
+
+instance : Inhabited GasSchedule :=
+  ⟨osaka⟩
+
+theorem tempoLatest_sstoreSetGas :
+    tempoLatest.sstoreSetGas = 250000 := rfl
+
+theorem tempoLatest_createBaseGas :
+    tempoLatest.createBaseGas = 500000 := rfl
+
+theorem tempoLatest_codeDepositGasPerByte :
+    tempoLatest.codeDepositGasPerByte = 1000 := rfl
+
+end GasSchedule
+
 namespace Protocol
 
 def osaka : Protocol :=
@@ -54,9 +107,12 @@ def callValueAlwaysZero (protocol : Protocol) : Bool :=
 def nativeValueTransfersEnabled (protocol : Protocol) : Bool :=
   !protocol.isTempo
 
+def gasSchedule : Protocol → GasSchedule
+  | .tempo _ => GasSchedule.tempo
+  | .ethereum .osaka => GasSchedule.osaka
+
 def sstoreSetGas : Protocol → Nat
-  | .tempo _ => 250000
-  | .ethereum .osaka => 20000
+  | protocol => protocol.gasSchedule.sstoreSetGas
 
 /--
 Gas charged by CALL-style native-value transfer to an empty account.
@@ -65,32 +121,25 @@ Tempo has no native value transfer surface; its explicit account-creation charge
 is modeled separately as `firstNonceAccountCreationGas`.
 -/
 def callNewAccountGas : Protocol → Nat
-  | .tempo _ => 0
-  | .ethereum .osaka => 25000
+  | protocol => protocol.gasSchedule.callNewAccountGas
 
 def firstNonceAccountCreationGas : Protocol → Nat
-  | .tempo _ => 250000
-  | .ethereum .osaka => 0
+  | protocol => protocol.gasSchedule.firstNonceAccountCreationGas
 
 def createBaseGas : Protocol → Nat
-  | .tempo _ => 500000
-  | .ethereum .osaka => 32000
+  | protocol => protocol.gasSchedule.createBaseGas
 
 def codeDepositGasPerByte : Protocol → Nat
-  | .tempo _ => 1000
-  | .ethereum .osaka => 200
+  | protocol => protocol.gasSchedule.codeDepositGasPerByte
 
 def txCreateGas : Protocol → Nat
-  | .tempo _ => 500000
-  | .ethereum .osaka => 32000
+  | protocol => protocol.gasSchedule.txCreateGas
 
 def initCodeWordGas : Protocol → Nat
-  | .tempo _ => 0
-  | .ethereum .osaka => 2
+  | protocol => protocol.gasSchedule.initCodeWordGas
 
 def eip7702AuthorizationBaseGas : Protocol → Nat
-  | .tempo _ => 12500
-  | .ethereum .osaka => 25000
+  | protocol => protocol.gasSchedule.eip7702AuthorizationBaseGas
 
 def hasStorageCredits : Protocol → Bool
   | .tempo .t7 => true

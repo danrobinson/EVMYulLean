@@ -161,8 +161,9 @@ def call (fuel : Nat)
       let σ := evmState.accountMap
       let Iₑ := evmState.executionEnv.depth
       let protocol := evmState.executionEnv.protocol
+      let gasSchedule := evmState.executionEnv.gasSchedule
       let callgas :=
-        CcallgasWithProtocol protocol t recipient value gas σ
+        CcallgasWithSchedule gasSchedule t recipient value gas σ
           evmState.toMachineState evmState.substate
       let evmState := {evmState with gasAvailable := evmState.gasAvailable - UInt256.ofNat gasCost}
       -- m[μs[3] . . . (μs[3] + μs[4] − 1)]
@@ -196,6 +197,7 @@ def call (fuel : Nat)
               (H := evmState.executionEnv.header)
               (w  := permission)                            -- I_w in Θ(.., I_W)
               (protocol := protocol)
+              (gasSchedule := gasSchedule)
           pure resultOfΘ
         else
           -- otherwise (σ, CCALLGAS(σ, μ, A), A, 0, ())
@@ -280,6 +282,7 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
                     I.header
                     I.perm
                     I.protocol
+                    I.gasSchedule
                 match Λ with
                   | .ok (a, cA, σ', g', A', z, o) =>
                     ( a
@@ -351,6 +354,7 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
                     I.header
                     I.perm
                     I.protocol
+                    I.gasSchedule
                 match Λ with
                   | .ok (a, cA, σ', g', A', z, o) =>
                     (a, {evmState with accountMap := σ', substate := A', createdAccounts := cA}, g', z, o)
@@ -459,7 +463,7 @@ def X (fuel : ℕ) (validJumps : Array UInt256) (evmState : State)
           .error .OutOfGass
         let gasAvailable := evmState.gasAvailable - .ofNat cost₁
         let evmState := { evmState with gasAvailable := gasAvailable}
-        let cost₂ := C' evmState w
+        let cost₂ := selectedC' evmState w
 
         if evmState.gasAvailable.toNat < cost₂ then
           .error .OutOfGass
@@ -597,6 +601,7 @@ def Lambda
   (H : BlockHeader)      -- "I_H has no special treatment and is determined from the blockchain"
   (w : Bool)             -- permission to make modifications to the state
   (protocol : Protocol := Protocol.osaka)
+  (gasSchedule : GasSchedule := protocol.gasSchedule)
   :
   Except EVM.ExecutionException
     ( AccountAddress
@@ -670,6 +675,7 @@ def Lambda
     , perm      := w
     , blobVersionedHashes := blobVersionedHashes
     , protocol := protocol
+    , gasSchedule := gasSchedule
     }
   match Ξ f createdAccounts genesisBlockHeader blocks σStar σ₀
       chainContext g AStar exEnv with
@@ -680,7 +686,7 @@ def Lambda
       .ok (a, createdAccounts, σ, g', AStar, false, o)
     | .ok (.success (createdAccounts', σStarStar, gStarStar, AStarStar) returnedData) =>
       -- The code-deposit cost (113)
-      let c := protocol.codeDepositGasPerByte * returnedData.size
+      let c := gasSchedule.codeDepositGasPerByte * returnedData.size
 
       let F : Bool := Id.run do -- (118)
         let F₀ : Bool :=
@@ -768,7 +774,8 @@ def thetaCallExecutionEnv
     (e : Nat)
     (H : BlockHeader)
     (w : Bool)
-    (protocol : Protocol := Protocol.osaka) : ExecutionEnv .EVM :=
+    (protocol : Protocol := Protocol.osaka)
+    (gasSchedule : GasSchedule := protocol.gasSchedule) : ExecutionEnv .EVM :=
   {
     codeOwner := r
     sender    := o
@@ -785,6 +792,7 @@ def thetaCallExecutionEnv
     header    := H
     blobVersionedHashes := blobVersionedHashes
     protocol := protocol
+    gasSchedule := gasSchedule
   }
 
 /--
@@ -828,6 +836,7 @@ def Θ (fuel : Nat)
       (H : BlockHeader)
       (w  : Bool)
       (protocol : Protocol := Protocol.osaka)
+      (gasSchedule : GasSchedule := protocol.gasSchedule)
         :
       Except EVM.ExecutionException (Batteries.RBSet AccountAddress compare × AccountMap .EVM × UInt256 × Substate × Bool × ByteArray)
 :=
@@ -839,7 +848,7 @@ def Θ (fuel : Nat)
   let σ₁ := thetaCallTransfer σ s r v
 
   let I : ExecutionEnv .EVM :=
-    thetaCallExecutionEnv blobVersionedHashes s o r c p v' d e H w protocol
+    thetaCallExecutionEnv blobVersionedHashes s o r c p v' d e H w protocol gasSchedule
 
   -- Equation (131)
   let (createdAccounts, z, σ'', g', A'', out) ←
@@ -881,9 +890,10 @@ def Υ (fuel : ℕ)
   (T : Transaction)
   (S_T : AccountAddress)
   (protocol : Protocol := Protocol.osaka)
+  (gasSchedule : GasSchedule := protocol.gasSchedule)
   : Except EVM.Exception (AccountMap .EVM × Substate × Bool × UInt256)
 := do
-  let g₀ : ℕ := EVM.intrinsicGasWithProtocol protocol T
+  let g₀ : ℕ := EVM.intrinsicGasWithSchedule gasSchedule T
   -- "here can be no invalid transactions from this point"
   let senderAccount := (σ.find? S_T).get!
   -- The priority fee (67)
@@ -958,6 +968,7 @@ def Υ (fuel : ℕ)
             H
             true
             protocol
+            gasSchedule
         with
           | .ok (_, _, σ_P, g', A, z, _) => pure (σ_P, g', A, z)
           | .error e => .error <| .ExecutionException e
@@ -987,6 +998,7 @@ def Υ (fuel : ℕ)
             H
             true
             protocol
+            gasSchedule
         with
           | .ok (_, σ_P, g',  A, z, _) => pure (σ_P, g', A, z)
           | .error e => .error <| .ExecutionException e

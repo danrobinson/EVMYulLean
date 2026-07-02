@@ -37,6 +37,13 @@ private def precompileWithDelegationBytesAccountMap : AccountMap .EVM :=
   (default : AccountMap .EVM)
     |>.insert 5 { (default : Account .EVM) with code := delegationCode targetAddressBytes }
 
+private def createCostState (schedule : GasSchedule) : EVM.State :=
+  { (default : EVM.State) with
+      stack := [⟨0⟩, ⟨0⟩, ⟨32⟩]
+      executionEnv :=
+        { (default : ExecutionEnv .EVM) with
+            gasSchedule := schedule } }
+
 #guard UInt256.clz ⟨0⟩ == ⟨256⟩
 #guard UInt256.clz ⟨1⟩ == ⟨255⟩
 #guard UInt256.clz ⟨0x8000000000000000000000000000000000000000000000000000000000000000⟩ == ⟨0⟩
@@ -44,6 +51,8 @@ private def precompileWithDelegationBytesAccountMap : AccountMap .EVM :=
 #guard EVM.δ (.CLZ : Operation .EVM) == some 1
 #guard EVM.α (.CLZ : Operation .EVM) == some 1
 #guard EVM.C' (default : EVM.State) (.CLZ : Operation .EVM) == GasConstants.Glow
+#guard EVM.selectedC' (createCostState GasSchedule.osaka) (.CREATE : Operation .EVM) == 32002
+#guard EVM.selectedC' (createCostState GasSchedule.tempoLatest) (.CREATE : Operation .EVM) == 500000
 
 #guard eip7702DelegationTargetOfCode? (delegationCode targetAddressBytes) == some target
 #guard eip7702DelegationTargetOfCode? targetCode == none

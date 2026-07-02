@@ -33,6 +33,7 @@ structure ExecutionEnv (τ : OperationType) where
   blobVersionedHashes : List ByteArray
   codeBytes : ByteArray := default
   protocol : Protocol := Protocol.osaka
+  gasSchedule : GasSchedule := GasSchedule.osaka
   deriving BEq, Inhabited, Repr
 
 def prevRandao {τ} (e : ExecutionEnv τ) : UInt256 :=
