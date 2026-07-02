@@ -4,6 +4,7 @@ import EvmYul.EVM.State
 import EvmYul.StateOps
 import EvmYul.MachineStateOps
 import EvmYul.EVM.GasConstants
+import EvmYul.Protocol
 
 namespace EvmYul
 
@@ -95,7 +96,7 @@ with the definition of `C_<>` functions that are described inline along with the
 
 It would be worth restructing everything to obtain cleaner separation of concerns.
 -/
-def Csstore (s : EVM.State) : ℕ :=
+def CsstoreWithProtocol (protocol : Protocol) (s : EVM.State) : ℕ :=
   let { stack := μₛ, accountMap := σ, σ₀ := σ₀, executionEnv.codeOwner := Iₐ, .. } := s
   let { storage := σ_Iₐ, .. } := σ.find! Iₐ
   let storeAddr := μₛ[0]!
@@ -111,9 +112,12 @@ def Csstore (s : EVM.State) : ℕ :=
     else
       Gcoldsload
   let storeComponent := if v = v' || v₀ ≠ v             then Gwarmaccess else
-                        if v ≠ v' && v₀ = v && v₀ = ⟨0⟩ then Gsset else
+                        if v ≠ v' && v₀ = v && v₀ = ⟨0⟩ then protocol.sstoreSetGas else
                         /- v ≠ v' ∧ v₀ = v ∧ v₀ ≠ 0 -/     Gsreset
   loadComponent + storeComponent
+
+def Csstore (s : EVM.State) : ℕ :=
+  CsstoreWithProtocol Protocol.osaka s
 
 def Ctstore : ℕ :=
   let loadComponent := 0
@@ -161,12 +165,21 @@ def Ctload : ℕ :=
 -/
 def L (n : ℕ) : ℕ := n - (n / 64)
 
+def CnewWithProtocol {τ : OperationType} (protocol : Protocol)
+    (t : AccountAddress) (val : UInt256) (σ : AccountMap τ) : ℕ :=
+  if EvmYul.State.dead σ t && val != ⟨0⟩ then
+    protocol.callNewAccountGas
+  else 0
+
 def Cnew {τ : OperationType} (t : AccountAddress) (val : UInt256)
     (σ : AccountMap τ) : ℕ :=
-  if EvmYul.State.dead σ t && val != ⟨0⟩ then Gnewaccount else 0
+  CnewWithProtocol Protocol.osaka t val σ
+
+def CxferWithProtocol (protocol : Protocol) (val : UInt256) : ℕ :=
+  if protocol.nativeValueTransfersEnabled && val != ⟨0⟩ then Gcallvalue else 0
 
 def Cxfer (val : UInt256) : ℕ :=
-  if val != ⟨0⟩ then Gcallvalue else 0
+  CxferWithProtocol Protocol.osaka val
 
 def addDelegatedCodeAccess
     (t : AccountAddress) (σ : AccountMap .EVM) (A : Substate) : Substate :=
@@ -180,40 +193,67 @@ def CdelegatedCodeAccess
   | none => 0
   | some target => Caccess target (A.addAccessedAccount t)
 
-def Cextra {τ : OperationType} (t r : AccountAddress) (val : UInt256)
+def CextraWithProtocol {τ : OperationType} (protocol : Protocol)
+    (t r : AccountAddress) (val : UInt256)
     (σ : AccountMap τ) (A : Substate) : ℕ :=
   let delegatedAccess :=
     match τ with
     | .EVM => CdelegatedCodeAccess t σ A
     | .Yul => 0
-  Caccess t A + delegatedAccess + Cxfer val + Cnew r val σ
+  Caccess t A + delegatedAccess + CxferWithProtocol protocol val +
+    CnewWithProtocol protocol r val σ
 
-def Cgascap {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+def Cextra {τ : OperationType} (t r : AccountAddress) (val : UInt256)
+    (σ : AccountMap τ) (A : Substate) : ℕ :=
+  CextraWithProtocol Protocol.osaka t r val σ A
+
+def CgascapWithProtocol {τ : OperationType} (protocol : Protocol)
+    (t r : AccountAddress) (val g : UInt256)
     (σ : AccountMap τ) (μ : MachineState) (A : Substate) :=
-  if μ.gasAvailable.toNat >= Cextra t r val σ A then
-    min (L <| (μ.gasAvailable.toNat - Cextra t r val σ A)) g.toNat
+  if μ.gasAvailable.toNat >= CextraWithProtocol protocol t r val σ A then
+    min (L <| (μ.gasAvailable.toNat -
+      CextraWithProtocol protocol t r val σ A)) g.toNat
   else
     g.toNat
 
-def Ccallgas {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+def Cgascap {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+    (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
+  CgascapWithProtocol Protocol.osaka t r val g σ μ A
+
+def CcallgasWithProtocol {τ : OperationType} (protocol : Protocol)
+    (t r : AccountAddress) (val g : UInt256)
     (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
   match val with
-    | ⟨0⟩ => Cgascap t r val g σ μ A
-    | _ => Cgascap t r val g σ μ A + GasConstants.Gcallstipend
+    | ⟨0⟩ => CgascapWithProtocol protocol t r val g σ μ A
+    | _ => CgascapWithProtocol protocol t r val g σ μ A + GasConstants.Gcallstipend
+
+def Ccallgas {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
+    (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
+  CcallgasWithProtocol Protocol.osaka t r val g σ μ A
 
 /--
 NB Assumes stack coherence.
 -/
+def CcallWithProtocol {τ : OperationType} (protocol : Protocol)
+    (t r : AccountAddress) (val g : UInt256)
+    (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
+  CgascapWithProtocol protocol t r val g σ μ A +
+    CextraWithProtocol protocol t r val σ A
+
 def Ccall {τ : OperationType} (t r : AccountAddress) (val g : UInt256)
     (σ : AccountMap τ) (μ : MachineState) (A : Substate) : ℕ :=
-  Cgascap t r val g σ μ A + Cextra t r val σ A
+  CcallWithProtocol Protocol.osaka t r val g σ μ A
 
 /--
 (65)
 -/
-def R (x : ℕ) : ℕ := Ginitcodeword * ((x + 31) / 32)
+def RWithProtocol (protocol : Protocol) (x : ℕ) : ℕ :=
+  protocol.initCodeWordGas * ((x + 31) / 32)
 
-def intrinsicGas (T : Transaction) : ℕ :=
+def R (x : ℕ) : ℕ :=
+  RWithProtocol Protocol.osaka x
+
+def intrinsicGasWithProtocol (protocol : Protocol) (T : Transaction) : ℕ :=
   let g₀_data :=
     T.base.data.foldl
       (λ acc b ↦
@@ -225,7 +265,11 @@ def intrinsicGas (T : Transaction) : ℕ :=
       0
   let g₀_create : ℕ :=
     if T.base.recipient == none then
-      GasConstants.Gtxcreate + R (T.base.data.size)
+      protocol.txCreateGas + RWithProtocol protocol (T.base.data.size)
+    else 0
+  let g₀_firstNonce : ℕ :=
+    if T.base.nonce == ⟨0⟩ then
+      protocol.firstNonceAccountCreationGas
     else 0
 
   let g₀_accessList : ℕ :=
@@ -234,7 +278,11 @@ def intrinsicGas (T : Transaction) : ℕ :=
         acc + GasConstants.Gaccesslistaddress + s.size * GasConstants.Gaccessliststorage
       )
       0
-  g₀_data + g₀_create + GasConstants.Gtransaction + g₀_accessList
+  g₀_data + g₀_create + g₀_firstNonce + GasConstants.Gtransaction +
+    g₀_accessList
+
+def intrinsicGas (T : Transaction) : ℕ :=
+  intrinsicGasWithProtocol Protocol.osaka T
 
 /--
 H.1. Gas Cost - the third summand.
@@ -242,10 +290,10 @@ H.1. Gas Cost - the third summand.
 NB Stack accesses are assumed guarded here and we access with `!`.
 This is for keeping in sync with the way the YP is structures, at least for the time being.
 -/
-def C' (s : State) (instr : Operation .EVM) : ℕ :=
+def C'WithProtocol (protocol : Protocol) (s : State) (instr : Operation .EVM) : ℕ :=
   let { accountMap := σ, stack := μₛ, substate := A, toMachineState := μ, executionEnv := I, ..} := s
   match instr with
-    | .SSTORE => Csstore s
+    | .SSTORE => CsstoreWithProtocol protocol s
     | .TSTORE => Ctstore
     | .EXP => let μ₁ := μₛ[1]!; if μ₁ == ⟨0⟩ then Gexp else Gexp + Gexpbyte * (1 + Nat.log 256 μ₁.toNat) -- TODO(check) I think this floors by itself. cf. H.1. YP.
     | .EXTCODECOPY => Caccess (AccountAddress.ofUInt256 μₛ[0]!) A + Gcopy * ((μₛ[3]!.toNat + 31) / 32)
@@ -255,8 +303,8 @@ def C' (s : State) (instr : Operation .EVM) : ℕ :=
     | .LOG3 => Glog + Glogdata * μₛ[1]!.toNat + 3 * Glogtopic
     | .LOG4 => Glog + Glogdata * μₛ[1]!.toNat + 4 * Glogtopic
     | .SELFDESTRUCT => Cselfdestruct s
-    | .CREATE => Gcreate + R μₛ[2]!.toNat
-    | .CREATE2 => let μ₂ := μₛ[2]!; Gcreate + Gkeccak256word * ((μ₂.toNat + 31) / 32) + R μ₂.toNat
+    | .CREATE => protocol.createBaseGas + RWithProtocol protocol μₛ[2]!.toNat
+    | .CREATE2 => let μ₂ := μₛ[2]!; protocol.createBaseGas + Gkeccak256word * ((μ₂.toNat + 31) / 32) + RWithProtocol protocol μ₂.toNat
     | .KECCAK256 => Gkeccak256 + Gkeccak256word * ((μₛ[1]!.toNat + 31) / 32)
     | .JUMPDEST => Gjumpdest
     | .SLOAD => Csload μₛ A I
@@ -267,10 +315,10 @@ def C' (s : State) (instr : Operation .EVM) : ℕ :=
       not what happens to be on the stack at index 2. Therefore it is 0 for
       `DELEGATECALL` and `STATICCALL`.
     -/
-    | .CALL =>         Ccall (AccountAddress.ofUInt256 μₛ[1]!) (AccountAddress.ofUInt256 μₛ[1]!) μₛ[2]! μₛ[0]! σ μ A
-    | .CALLCODE =>     Ccall (AccountAddress.ofUInt256 μₛ[1]!)          s.executionEnv.codeOwner μₛ[2]! μₛ[0]! σ μ A
-    | .DELEGATECALL => Ccall (AccountAddress.ofUInt256 μₛ[1]!)          s.executionEnv.codeOwner    ⟨0⟩ μₛ[0]! σ μ A
-    | .STATICCALL =>   Ccall (AccountAddress.ofUInt256 μₛ[1]!) (AccountAddress.ofUInt256 μₛ[1]!)    ⟨0⟩ μₛ[0]! σ μ A
+    | .CALL =>         CcallWithProtocol protocol (AccountAddress.ofUInt256 μₛ[1]!) (AccountAddress.ofUInt256 μₛ[1]!) μₛ[2]! μₛ[0]! σ μ A
+    | .CALLCODE =>     CcallWithProtocol protocol (AccountAddress.ofUInt256 μₛ[1]!)          s.executionEnv.codeOwner μₛ[2]! μₛ[0]! σ μ A
+    | .DELEGATECALL => CcallWithProtocol protocol (AccountAddress.ofUInt256 μₛ[1]!)          s.executionEnv.codeOwner    ⟨0⟩ μₛ[0]! σ μ A
+    | .STATICCALL =>   CcallWithProtocol protocol (AccountAddress.ofUInt256 μₛ[1]!) (AccountAddress.ofUInt256 μₛ[1]!)    ⟨0⟩ μₛ[0]! σ μ A
     | .BLOBHASH => HASH_OPCODE_GAS
     | w =>
       if w ∈ Wcopy then Gverylow + Gcopy * ((μₛ[2]!.toNat + 31) / 32) else
@@ -282,6 +330,12 @@ def C' (s : State) (instr : Operation .EVM) : ℕ :=
       if w ∈ Wmid then Gmid else
       if w ∈ Whigh then Ghigh else
       0
+
+def C' (s : State) (instr : Operation .EVM) : ℕ :=
+  C'WithProtocol Protocol.osaka s instr
+
+def selectedC' (s : State) (instr : Operation .EVM) : ℕ :=
+  C'WithProtocol s.executionEnv.protocol s instr
 
 /--
 H.1. Gas Cost

@@ -48,6 +48,18 @@ def balance {τ} (self : State τ) (k : UInt256) : State τ × UInt256 :=
   let addr := AccountAddress.ofUInt256 k
   (self.addAccessedAccount addr, self.accountMap.find? addr |>.elim ⟨0⟩ (·.balance))
 
+def balanceWithProtocol {τ}
+    (protocol : Protocol) (self : State τ) (k : UInt256) :
+    State τ × UInt256 :=
+  let result := balance self k
+  if protocol.nativeBalanceAlwaysZero then
+    (result.1, ⟨0⟩)
+  else
+    result
+
+def selectedBalance {τ} (self : State τ) (k : UInt256) : State τ × UInt256 :=
+  balanceWithProtocol self.executionEnv.protocol self k
+
 def accountCodeImage {τ} (account : Account τ) : ByteArray :=
   match τ with
   | .EVM => account.code
@@ -117,6 +129,16 @@ def chainId {τ} (_ : State τ) : UInt256 := .ofNat EvmYul.chainId
 
 def selfbalance {τ} (self : State τ) : UInt256 :=
   Batteries.RBMap.find? self.accountMap self.executionEnv.codeOwner |>.elim ⟨0⟩ (·.balance)
+
+def selfbalanceWithProtocol {τ}
+    (protocol : Protocol) (self : State τ) : UInt256 :=
+  if protocol.nativeBalanceAlwaysZero then
+    ⟨0⟩
+  else
+    selfbalance self
+
+def selectedSelfbalance {τ} (self : State τ) : UInt256 :=
+  selfbalanceWithProtocol self.executionEnv.protocol self
 
 def setCode (self : State .EVM) (code : ByteArray) : State .EVM :=
   { self with executionEnv.code := code }

@@ -160,7 +160,10 @@ def call (fuel : Nat)
       let Iₐ := evmState.executionEnv.codeOwner
       let σ := evmState.accountMap
       let Iₑ := evmState.executionEnv.depth
-      let callgas := Ccallgas t recipient value gas σ evmState.toMachineState evmState.substate
+      let protocol := evmState.executionEnv.protocol
+      let callgas :=
+        CcallgasWithProtocol protocol t recipient value gas σ
+          evmState.toMachineState evmState.substate
       let evmState := {evmState with gasAvailable := evmState.gasAvailable - UInt256.ofNat gasCost}
       -- m[μs[3] . . . (μs[3] + μs[4] − 1)]
       let i := evmState.memory.readWithPadding inOffset.toNat inSize.toNat
@@ -192,6 +195,7 @@ def call (fuel : Nat)
               (e  := Iₑ + 1)
               (H := evmState.executionEnv.header)
               (w  := permission)                            -- I_w in Θ(.., I_W)
+              (protocol := protocol)
           pure resultOfΘ
         else
           -- otherwise (σ, CCALLGAS(σ, μ, A), A, 0, ())
@@ -275,6 +279,7 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
                     ζ
                     I.header
                     I.perm
+                    I.protocol
                 match Λ with
                   | .ok (a, cA, σ', g', A', z, o) =>
                     ( a
@@ -345,6 +350,7 @@ def step (fuel : ℕ) (gasCost : ℕ) (instr : Option (Operation .EVM × Option 
                     ζ
                     I.header
                     I.perm
+                    I.protocol
                 match Λ with
                   | .ok (a, cA, σ', g', A', z, o) =>
                     (a, {evmState with accountMap := σ', substate := A', createdAccounts := cA}, g', z, o)
@@ -590,6 +596,7 @@ def Lambda
   (ζ : Option ByteArray) -- the salt (92)
   (H : BlockHeader)      -- "I_H has no special treatment and is determined from the blockchain"
   (w : Bool)             -- permission to make modifications to the state
+  (protocol : Protocol := Protocol.osaka)
   :
   Except EVM.ExecutionException
     ( AccountAddress
@@ -662,6 +669,7 @@ def Lambda
     , depth     := e.toNat
     , perm      := w
     , blobVersionedHashes := blobVersionedHashes
+    , protocol := protocol
     }
   match Ξ f createdAccounts genesisBlockHeader blocks σStar σ₀
       chainContext g AStar exEnv with
@@ -672,7 +680,7 @@ def Lambda
       .ok (a, createdAccounts, σ, g', AStar, false, o)
     | .ok (.success (createdAccounts', σStarStar, gStarStar, AStarStar) returnedData) =>
       -- The code-deposit cost (113)
-      let c := GasConstants.Gcodedeposit * returnedData.size
+      let c := protocol.codeDepositGasPerByte * returnedData.size
 
       let F : Bool := Id.run do -- (118)
         let F₀ : Bool :=
@@ -759,7 +767,8 @@ def thetaCallExecutionEnv
     (d : ByteArray)
     (e : Nat)
     (H : BlockHeader)
-    (w : Bool) : ExecutionEnv .EVM :=
+    (w : Bool)
+    (protocol : Protocol := Protocol.osaka) : ExecutionEnv .EVM :=
   {
     codeOwner := r
     sender    := o
@@ -775,6 +784,7 @@ def thetaCallExecutionEnv
         | ToExecute.Code code => code
     header    := H
     blobVersionedHashes := blobVersionedHashes
+    protocol := protocol
   }
 
 /--
@@ -817,6 +827,7 @@ def Θ (fuel : Nat)
       (e  : Nat)
       (H : BlockHeader)
       (w  : Bool)
+      (protocol : Protocol := Protocol.osaka)
         :
       Except EVM.ExecutionException (Batteries.RBSet AccountAddress compare × AccountMap .EVM × UInt256 × Substate × Bool × ByteArray)
 :=
@@ -828,7 +839,7 @@ def Θ (fuel : Nat)
   let σ₁ := thetaCallTransfer σ s r v
 
   let I : ExecutionEnv .EVM :=
-    thetaCallExecutionEnv blobVersionedHashes s o r c p v' d e H w
+    thetaCallExecutionEnv blobVersionedHashes s o r c p v' d e H w protocol
 
   -- Equation (131)
   let (createdAccounts, z, σ'', g', A'', out) ←
@@ -869,9 +880,10 @@ def Υ (fuel : ℕ)
   (blocks : ProcessedBlocks)
   (T : Transaction)
   (S_T : AccountAddress)
+  (protocol : Protocol := Protocol.osaka)
   : Except EVM.Exception (AccountMap .EVM × Substate × Bool × UInt256)
 := do
-  let g₀ : ℕ := EVM.intrinsicGas T
+  let g₀ : ℕ := EVM.intrinsicGasWithProtocol protocol T
   -- "here can be no invalid transactions from this point"
   let senderAccount := (σ.find? S_T).get!
   -- The priority fee (67)
@@ -945,6 +957,7 @@ def Υ (fuel : ℕ)
             none
             H
             true
+            protocol
         with
           | .ok (_, _, σ_P, g', A, z, _) => pure (σ_P, g', A, z)
           | .error e => .error <| .ExecutionException e
@@ -973,6 +986,7 @@ def Υ (fuel : ℕ)
             0
             H
             true
+            protocol
         with
           | .ok (_, σ_P, g',  A, z, _) => pure (σ_P, g', A, z)
           | .error e => .error <| .ExecutionException e

@@ -2,6 +2,7 @@ import EvmYul.MachineState
 import EvmYul.MachineStateOps
 import EvmYul.Operations
 import EvmYul.Pretty
+import EvmYul.Protocol
 import EvmYul.Semantics
 import EvmYul.SharedState
 import EvmYul.SharedStateOps

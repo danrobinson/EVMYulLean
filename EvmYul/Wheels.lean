@@ -189,7 +189,7 @@ def ByteArray.extract' (a : ByteArray) (b e : Nat) : ByteArray :=
 
 def HexPrefix := "0x"
 
-def TargetSchedule := "Cancun"
+def TargetSchedule := "Osaka"
 
 def isHexDigitChar (c : Char) : Bool :=
   '0' <= c && c <= '9' || 'a' <= c.toLower && c.toLower <= 'f'

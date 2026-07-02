@@ -1,5 +1,6 @@
 import EvmYul.Wheels
 import EvmYul.UInt256
+import EvmYul.Protocol
 import EvmYul.State.BlockHeader
 import EvmYul.Yul.Ast
 
@@ -31,6 +32,7 @@ structure ExecutionEnv (τ : OperationType) where
   perm      : Bool
   blobVersionedHashes : List ByteArray
   codeBytes : ByteArray := default
+  protocol : Protocol := Protocol.osaka
   deriving BEq, Inhabited, Repr
 
 def prevRandao {τ} (e : ExecutionEnv τ) : UInt256 :=
@@ -45,5 +47,15 @@ def ExecutionEnv.getBlobGasprice {τ} (e : ExecutionEnv τ) : UInt256 :=
 def blobhash {τ} (e : ExecutionEnv τ) (i : UInt256) : UInt256 :=
   e.blobVersionedHashes[i.toNat]?.option ⟨0⟩
     (.ofNat ∘ fromByteArrayBigEndian)
+
+def ExecutionEnv.weiValueWithProtocol {τ}
+    (protocol : Protocol) (e : ExecutionEnv τ) : UInt256 :=
+  if protocol.callValueAlwaysZero then
+    ⟨0⟩
+  else
+    e.weiValue
+
+def ExecutionEnv.selectedWeiValue {τ} (e : ExecutionEnv τ) : UInt256 :=
+  e.weiValueWithProtocol e.protocol
 
 end EvmYul
