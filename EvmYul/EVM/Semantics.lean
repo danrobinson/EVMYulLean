@@ -76,6 +76,10 @@ def argOnNBytesOfInstr : Operation .EVM → ℕ
 
 def N (pc : UInt256) (instr : Operation .EVM) := pc + ⟨1⟩ + .ofNat (argOnNBytesOfInstr instr)
 
+def codeBytesWithRightPadding (arr : ByteArray) (start len : ℕ) : ByteArray :=
+  let read := arr.extract' start (start + len)
+  ⟨read.data ++ Array.replicate (len - read.size) 0⟩
+
 /--
 Returns the instruction from `arr` at `pc` assuming it is valid.
 
@@ -89,7 +93,7 @@ def decode (arr : ByteArray) (pc : UInt256) :
     instr,
     if argWidth == 0
     then .none
-    else .some (EvmYul.uInt256OfByteArray (arr.extract' pc.toNat.succ (pc.toNat.succ + argWidth)), argWidth)
+    else .some (EvmYul.uInt256OfByteArray (codeBytesWithRightPadding arr pc.toNat.succ argWidth), argWidth)
   )
 
 def fetchInstr (I : EvmYul.ExecutionEnv .EVM) (pc : UInt256) :

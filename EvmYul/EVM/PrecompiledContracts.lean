@@ -137,7 +137,7 @@ def expModAux (m : ℕ) (a : ℕ) (c : ℕ) : ℕ → ℕ
     else
       expModAux m (a % m)     (c * c % m) (n / 2)
 
-def expMod (m : ℕ) (b : UInt256) (n : ℕ) : ℕ := expModAux m 1 b.toNat n
+def expMod (m : ℕ) (b : ℕ) (n : ℕ) : ℕ := expModAux m 1 b n
 
 def Ξ_EXPMOD_lengthLimit : ℕ := 1024
 
@@ -189,7 +189,7 @@ def Ξ_EXPMOD_output (data : ByteArray) : ByteArray :=
   else
     let base := nat_of_slice data 96 base_length
     let exp := nat_of_slice data (96 + base_length) exp_length
-    let expmod_base := BE (expMod modulus (.ofNat base) exp)
+    let expmod_base := BE (expMod modulus base exp)
     let expmod_zeroes :=
       if modulus_length ≥ expmod_base.size then
         ffi.ByteArray.zeroes ⟨modulus_length - expmod_base.size⟩
