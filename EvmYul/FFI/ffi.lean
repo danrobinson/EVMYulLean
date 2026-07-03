@@ -1,3 +1,5 @@
+import Init.Data.Array.Lemmas
+
 namespace ffi
 
 @[extern "sha256"]
@@ -15,7 +17,61 @@ def BLAKE2 (d : ByteArray) : Except String ByteArray := do
   return BLAKE2Compress d
 
 @[extern "memset_zero"]
-opaque ByteArray.zeroes (n : USize) : ByteArray
+def ByteArray.zeroes (n : USize) : ByteArray :=
+  ⟨Array.replicate n.toNat 0⟩
+
+@[simp] theorem ByteArray.size_zeroes (n : USize) :
+    (ByteArray.zeroes n).size = n.toNat := by
+  change (Array.replicate n.toNat 0).size = n.toNat
+  simp
+
+@[simp] theorem ByteArray.getElem_zeroes
+    (n : USize) (index : Nat)
+    (hIndex : index < (ByteArray.zeroes n).size) :
+    (ByteArray.zeroes n)[index] = 0 := by
+  rw [ByteArray.size_zeroes] at hIndex
+  change
+    (Array.replicate n.toNat 0)[index]'(by simpa using hIndex) = 0
+  simp
+
+@[simp] theorem ByteArray.data_getD_zeroes
+    (n : USize) (index : Nat) :
+    (ByteArray.zeroes n).data.getD index 0 = 0 := by
+  simp [ByteArray.zeroes, Array.getD]
+
+@[simp] theorem ByteArray.data_getElem?_zeroes
+    (n : USize) (index : Nat) :
+    (ByteArray.zeroes n).data[index]? =
+      if index < n.toNat then some 0 else none := by
+  simp [ByteArray.zeroes, Array.getElem?_replicate]
+
+private theorem ByteArray.toList_loop
+    (bytes : ByteArray) (index : Nat) (acc : List UInt8) :
+    ByteArray.toList.loop bytes index acc =
+      acc.reverse ++ bytes.data.toList.drop index := by
+  fun_induction ByteArray.toList.loop bytes index acc with
+  | case1 index acc hIndex ih =>
+      rw [ih]
+      simp only [List.reverse_cons, List.singleton_append,
+        List.append_assoc]
+      have hDataIndex : index < bytes.data.toList.length := by
+        simpa [ByteArray.size_data] using hIndex
+      rw [List.drop_eq_getElem_cons hDataIndex]
+      congr 2
+      unfold ByteArray.get!
+      cases bytes with
+      | mk data =>
+          exact getElem!_pos data index (by simpa using hDataIndex)
+  | case2 index acc hIndex =>
+      have hData : bytes.data.toList.length ≤ index := by
+        simpa [ByteArray.size_data, Nat.not_lt] using hIndex
+      simp [List.drop_eq_nil_iff.mpr hData]
+
+@[simp] theorem ByteArray.toList_eq_data_toList
+    (bytes : ByteArray) :
+    bytes.toList = bytes.data.toList := by
+  unfold ByteArray.toList
+  simpa using ByteArray.toList_loop bytes 0 []
 
 @[extern "keccak256"]
 opaque keccak256 (input : @& ByteArray) (len : USize) : ByteArray
