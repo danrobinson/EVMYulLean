@@ -1,3 +1,5 @@
+import EvmYul.Wheels
+
 namespace EvmYul
 
 /--
@@ -27,8 +29,28 @@ inductive Protocol where
   | tempo (fork : TempoFork)
   deriving BEq, DecidableEq, Repr
 
+/--
+Context supplied to schedule hooks for an `SSTORE`.
+
+The current built-in Osaka and Tempo schedules use constant clean-creation
+charges, but this context leaves room for a future schedule to choose an
+effective charge from storage-credit/accounting state resolved outside the
+contract-visible EVM state.
+-/
+structure SStoreGasContext where
+  owner : AccountAddress
+  key : UInt256
+  originalValue : UInt256
+  currentValue : UInt256
+  newValue : UInt256
+  slotAccessed : Bool
+  pc : UInt256
+  execLength : Nat
+  deriving BEq, DecidableEq, Inhabited, Repr
+
 structure GasSchedule where
   sstoreSetGas : Nat
+  sstoreCleanCreateGas : SStoreGasContext → Nat := fun _ => sstoreSetGas
   callValueTransferGas : Nat
   callNewAccountGas : Nat
   firstNonceAccountCreationGas : Nat
@@ -37,7 +59,34 @@ structure GasSchedule where
   txCreateGas : Nat
   initCodeWordGas : Nat
   eip7702AuthorizationBaseGas : Nat
-  deriving BEq, DecidableEq, Repr
+
+instance : BEq GasSchedule where
+  beq left right :=
+    left.sstoreSetGas == right.sstoreSetGas &&
+    left.callValueTransferGas == right.callValueTransferGas &&
+    left.callNewAccountGas == right.callNewAccountGas &&
+    left.firstNonceAccountCreationGas == right.firstNonceAccountCreationGas &&
+    left.createBaseGas == right.createBaseGas &&
+    left.codeDepositGasPerByte == right.codeDepositGasPerByte &&
+    left.txCreateGas == right.txCreateGas &&
+    left.initCodeWordGas == right.initCodeWordGas &&
+    left.eip7702AuthorizationBaseGas == right.eip7702AuthorizationBaseGas
+
+instance : Repr GasSchedule where
+  reprPrec schedule _ :=
+    "GasSchedule(" ++
+      "sstoreSetGas := " ++ repr schedule.sstoreSetGas ++
+      ", callValueTransferGas := " ++ repr schedule.callValueTransferGas ++
+      ", callNewAccountGas := " ++ repr schedule.callNewAccountGas ++
+      ", firstNonceAccountCreationGas := " ++
+        repr schedule.firstNonceAccountCreationGas ++
+      ", createBaseGas := " ++ repr schedule.createBaseGas ++
+      ", codeDepositGasPerByte := " ++ repr schedule.codeDepositGasPerByte ++
+      ", txCreateGas := " ++ repr schedule.txCreateGas ++
+      ", initCodeWordGas := " ++ repr schedule.initCodeWordGas ++
+      ", eip7702AuthorizationBaseGas := " ++
+        repr schedule.eip7702AuthorizationBaseGas ++
+      ")"
 
 namespace GasSchedule
 
@@ -71,6 +120,9 @@ instance : Inhabited GasSchedule :=
 
 theorem tempoLatest_sstoreSetGas :
     tempoLatest.sstoreSetGas = 250000 := rfl
+
+theorem tempoLatest_sstoreCleanCreateGas (context : SStoreGasContext) :
+    tempoLatest.sstoreCleanCreateGas context = 250000 := rfl
 
 theorem tempoLatest_createBaseGas :
     tempoLatest.createBaseGas = 500000 := rfl
@@ -113,6 +165,10 @@ def gasSchedule : Protocol → GasSchedule
 
 def sstoreSetGas : Protocol → Nat
   | protocol => protocol.gasSchedule.sstoreSetGas
+
+def sstoreCleanCreateGas (protocol : Protocol)
+    (context : SStoreGasContext) : Nat :=
+  protocol.gasSchedule.sstoreCleanCreateGas context
 
 /--
 Gas charged by CALL-style native-value transfer to an empty account.
@@ -162,6 +218,9 @@ theorem tempoLatest_isTempo : tempoLatest.isTempo = true := rfl
 
 theorem tempoLatest_sstoreSetGas :
     tempoLatest.sstoreSetGas = 250000 := rfl
+
+theorem tempoLatest_sstoreCleanCreateGas (context : SStoreGasContext) :
+    tempoLatest.sstoreCleanCreateGas context = 250000 := rfl
 
 theorem tempoLatest_createBaseGas :
     tempoLatest.createBaseGas = 500000 := rfl

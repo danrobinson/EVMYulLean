@@ -106,13 +106,23 @@ def CsstoreWithSchedule (schedule : GasSchedule) (s : EVM.State) : ℕ :=
       | some acc => acc.storage.findD storeAddr ⟨0⟩
   let v := σ_Iₐ.findD storeAddr ⟨0⟩
   let v' := μₛ[1]!
+  let slotAccessed := s.substate.accessedStorageKeys.contains (Iₐ, storeAddr)
+  let context : SStoreGasContext :=
+    { owner := Iₐ
+      key := storeAddr
+      originalValue := v₀
+      currentValue := v
+      newValue := v'
+      slotAccessed := slotAccessed
+      pc := s.pc
+      execLength := s.execLength }
   let loadComponent :=
-    if s.substate.accessedStorageKeys.contains (Iₐ, storeAddr) then
+    if slotAccessed then
       0
     else
       Gcoldsload
   let storeComponent := if v = v' || v₀ ≠ v             then Gwarmaccess else
-                        if v ≠ v' && v₀ = v && v₀ = ⟨0⟩ then schedule.sstoreSetGas else
+                        if v ≠ v' && v₀ = v && v₀ = ⟨0⟩ then schedule.sstoreCleanCreateGas context else
                         /- v ≠ v' ∧ v₀ = v ∧ v₀ ≠ 0 -/     Gsreset
   loadComponent + storeComponent
 

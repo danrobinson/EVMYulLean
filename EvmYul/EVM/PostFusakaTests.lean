@@ -44,6 +44,19 @@ private def createCostState (schedule : GasSchedule) : EVM.State :=
         { (default : ExecutionEnv .EVM) with
             gasSchedule := schedule } }
 
+private def sstoreOwner : AccountAddress := .ofNat 0x3000
+
+private def sstoreCleanCreateState (schedule : GasSchedule) : EVM.State :=
+  { (default : EVM.State) with
+      stack := [⟨1⟩, ⟨2⟩]
+      accountMap :=
+        (default : AccountMap .EVM).insert sstoreOwner
+          (default : Account .EVM)
+      executionEnv :=
+        { (default : ExecutionEnv .EVM) with
+            codeOwner := sstoreOwner
+            gasSchedule := schedule } }
+
 #guard UInt256.clz ⟨0⟩ == ⟨256⟩
 #guard UInt256.clz ⟨1⟩ == ⟨255⟩
 #guard UInt256.clz ⟨0x8000000000000000000000000000000000000000000000000000000000000000⟩ == ⟨0⟩
@@ -53,6 +66,8 @@ private def createCostState (schedule : GasSchedule) : EVM.State :=
 #guard EVM.C' (default : EVM.State) (.CLZ : Operation .EVM) == GasConstants.Glow
 #guard EVM.selectedC' (createCostState GasSchedule.osaka) (.CREATE : Operation .EVM) == 32002
 #guard EVM.selectedC' (createCostState GasSchedule.tempoLatest) (.CREATE : Operation .EVM) == 500000
+#guard EVM.selectedC' (sstoreCleanCreateState GasSchedule.osaka) (.SSTORE : Operation .EVM) == 22100
+#guard EVM.selectedC' (sstoreCleanCreateState GasSchedule.tempoLatest) (.SSTORE : Operation .EVM) == 252100
 
 #guard eip7702DelegationTargetOfCode? (delegationCode targetAddressBytes) == some target
 #guard eip7702DelegationTargetOfCode? targetCode == none
