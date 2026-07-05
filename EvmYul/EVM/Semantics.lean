@@ -96,13 +96,37 @@ def fetchInstr (I : EvmYul.ExecutionEnv .EVM) (pc : UInt256) :
                Except EVM.ExecutionException (Operation .EVM × Option (UInt256 × Nat)) :=
   decode I.code pc |>.option (.error .StackUnderflow) Except.ok
 
-partial def D_J_aux (c : ByteArray) (i : UInt256) (result : Array UInt256) : Array UInt256 :=
-  match c.get? i.toNat >>= EvmYul.EVM.parseInstr with
-    | none => result
-    | some cᵢ => D_J_aux c (N i cᵢ) (if cᵢ = .JUMPDEST then result.push i else result)
+def D_J_aux (c : ByteArray) (n : Nat) (result : Array UInt256) : Array UInt256 :=
+  if h : n < c.size then
+    match EvmYul.EVM.parseInstr c[n] with
+      | none => result
+      | some cᵢ =>
+        D_J_aux c (n + 1 + argOnNBytesOfInstr cᵢ)
+                (if cᵢ = .JUMPDEST then result.push (.ofNat n) else result)
+  else result
+  termination_by c.size - n
+  decreasing_by omega
 
 def D_J (c : ByteArray) (i : UInt256) : Array UInt256 :=
-  D_J_aux c i #[]
+  D_J_aux c i.toNat #[]
+
+theorem D_J_aux_out_of_bounds (c : ByteArray) (n : Nat) (result : Array UInt256)
+    (h : ¬ n < c.size) : D_J_aux c n result = result := by
+  unfold D_J_aux; simp [h]
+
+theorem D_J_aux_step (c : ByteArray) (n : Nat) (result : Array UInt256)
+    (h : n < c.size) :
+    D_J_aux c n result =
+      match EvmYul.EVM.parseInstr c[n] with
+      | none => result
+      | some cᵢ =>
+          D_J_aux c (n + 1 + argOnNBytesOfInstr cᵢ)
+                  (if cᵢ = .JUMPDEST then result.push (.ofNat n) else result) := by
+  conv_lhs => rw [D_J_aux]
+  rw [dif_pos h]
+
+theorem D_J_def (c : ByteArray) (i : UInt256) : D_J c i = D_J_aux c i.toNat #[] :=
+  rfl
 
 private def BitVec.ofFn {k} (x : Fin k → Bool) : BitVec k :=
   BitVec.ofNat k (natOfBools (Vector.ofFn x))
