@@ -1,4 +1,5 @@
 import Init.Data.Array.Lemmas
+import EvmYul.SpongeHash.Keccak256
 
 namespace ffi
 
@@ -73,8 +74,16 @@ private theorem ByteArray.toList_loop
   unfold ByteArray.toList
   simpa using ByteArray.toList_loop bytes 0 []
 
+/-- Keccak-256 of the first `len` bytes of `input`.
+
+No longer `opaque`: the logical meaning is the pure sponge implementation in
+`EvmYul.SpongeHash.Keccak256`, so `KEC` is provable-about; the `@[extern]`
+attribute keeps compiled execution on the native `keccak256` symbol
+(byte-parity with the pure body is asserted by downstream witnesses). -/
 @[extern "keccak256"]
-opaque keccak256 (input : @& ByteArray) (len : USize) : ByteArray
+def keccak256 (input : @& ByteArray) (len : USize) : ByteArray :=
+  EvmYul.SpongeHash.Keccak256.keccak256
+    (ByteArray.mk (input.data.extract 0 len.toNat))
 
 def KECCAK256 (d : ByteArray) : Except String ByteArray :=
   pure <| keccak256 d d.size.toUSize
