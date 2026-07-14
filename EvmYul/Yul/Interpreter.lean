@@ -82,6 +82,22 @@ def restoreRevertedContractCallState (s₀ s₂ : State)
       }
     .ok (.Ok sharedState₃ varstore, [⟨0⟩])
 
+/--
+Commit the state of a *successful* external sub-call `s₂` back into the
+caller's state `s₀`.
+
+The `accountMap.isEmpty` guards below mirror the Yellow Paper's `σ'' = ∅`
+abort sentinel (eqs. (127)/(129)): an empty post-call account map denotes
+"no resulting state", in which case the caller's `accountMap`/`substate`
+are kept. On a genuinely successful sub-call this branch is expected to be
+unreachable — the child starts from the caller's (non-empty, post-transfer)
+account map and its result always contains the executing account — so the
+guard is a defensive structural mirror of the EVM-side merge, not a
+behavioral rule real executions depend on. `createdAccounts` is taken from
+the child unconditionally; on the (unreachable) sentinel branch this is
+asymmetric with `accountMap`/`substate`, which is harmless precisely
+because that branch cannot fire on a successful call.
+-/
 def restoreSuccessfulContractCallState (s₀ s₂ : State)
     (varstore : VarStore) (returnData : ByteArray)
     (inOffset inSize outOffset outSize : Literal) :

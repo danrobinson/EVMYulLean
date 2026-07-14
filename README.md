@@ -3,6 +3,14 @@ Where applicable, the underlying EVM primops are used directly by the Yul model.
 
 Everything here is work in progress and is subject to change therefore.
 
+> This is a fork of
+> [NethermindEth/EVMYulLean](https://github.com/NethermindEth/EVMYulLean) used
+> as the pinned semantic trust anchor for the
+> [Solidus](https://github.com/paradigmxyz/solidus) verified compiler. Every
+> divergence from upstream — including which definitions are shared between
+> the Yul and EVM models and therefore sit inside the trusted base — is
+> disclosed in [`FORK_NOTES.md`](FORK_NOTES.md).
+
 # Requirements
 - Python packages: coincurve, typing-extensions, pycryptodome, eth-typing, py-ecc
 
